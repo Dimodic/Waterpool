@@ -7,7 +7,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.exc import DBAPIError, OperationalError
 
-
 # --- Настройка подключения --------------------------------------------------
 def _connection_url():
     cfg = st.secrets["postgres"]
@@ -16,50 +15,45 @@ def _connection_url():
         f"@{cfg['host']}:{cfg['port']}/{cfg['dbname']}"
     )
 
-
 ENGINE = create_engine(
     _connection_url(),
     pool_size=10,
     max_overflow=20,
     future=True,
-    echo=True,  # для логирования SQL-запросов
+    echo=True,  # логирование SQL-запросов
 )
 SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
-
 
 # --- ORM-модели --------------------------------------------------------------
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    pwd_hash = Column(String(128), nullable=False)
-    role = Column(String(10), default="user")
-    first_name = Column(String(50), nullable=False)
-    last_name = Column(String(50), nullable=False)
-    middle_name = Column(String(50), nullable=True)
-    phone = Column(String(20), nullable=True)
-    gender = Column(String(10), nullable=True)
-    email = Column(String(100), unique=True, nullable=False, index=True)
+    id           = Column(Integer, primary_key=True, index=True)
+    username     = Column(String(50), unique=True, nullable=False, index=True)
+    pwd_hash     = Column(String(128), nullable=False)
+    role         = Column(String(10), default="user")
+    first_name   = Column(String(50), nullable=False)
+    last_name    = Column(String(50), nullable=False)
+    middle_name  = Column(String(50), nullable=True)
+    phone        = Column(String(20), nullable=True)
+    gender       = Column(String(10), nullable=True)
+    email        = Column(String(100), unique=True, nullable=False, index=True)
 
-    bookings = relationship("Booking", back_populates="user", cascade="all,delete")
-
+    bookings     = relationship("Booking", back_populates="user", cascade="all,delete")
 
 class Timeslot(Base):
     __tablename__ = "timeslots"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id   = Column(Integer, primary_key=True, index=True)
     time = Column(Time, unique=True, nullable=False)
-
 
 class Trainer(Base):
     __tablename__ = "trainers"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(50), unique=True, nullable=False)
+    id        = Column(Integer, primary_key=True, index=True)
+    name      = Column(String(50), unique=True, nullable=False)
     schedules = relationship("TrainerSchedule", back_populates="trainer", cascade="all,delete")
-
 
 class TrainerSchedule(Base):
     __tablename__ = "trainer_schedules"
@@ -67,33 +61,31 @@ class TrainerSchedule(Base):
         UniqueConstraint("trainer_id", "timeslot_id", "day_of_week"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    trainer_id = Column(Integer, ForeignKey("trainers.id", ondelete="CASCADE"), nullable=False)
-    timeslot_id = Column(Integer, ForeignKey("timeslots.id", ondelete="CASCADE"), nullable=False)
-    day_of_week = Column(Integer, nullable=False)
+    id           = Column(Integer, primary_key=True, index=True)
+    trainer_id   = Column(Integer, ForeignKey("trainers.id", ondelete="CASCADE"), nullable=False)
+    timeslot_id  = Column(Integer, ForeignKey("timeslots.id", ondelete="CASCADE"), nullable=False)
+    day_of_week  = Column(Integer, nullable=False)
 
-    trainer = relationship("Trainer", back_populates="schedules")
-    timeslot = relationship("Timeslot")
-
+    trainer      = relationship("Trainer", back_populates="schedules")
+    timeslot     = relationship("Timeslot")
 
 class Booking(Base):
     __tablename__ = "bookings"
     __table_args__ = (
-        UniqueConstraint("date", "time", "lane", name="uq_lane_per_slot"),
+        UniqueConstraint("date", "time", "lane",    name="uq_lane_per_slot"),
         UniqueConstraint("date", "time", "trainer", name="uq_trainer_per_slot"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    date = Column(Date, nullable=False)
-    time = Column(Time, nullable=False)
-    lane = Column(Integer, nullable=False)
-    trainer = Column(String(50), nullable=False)
+    id        = Column(Integer, primary_key=True, index=True)
+    user_id   = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    date      = Column(Date,  nullable=False)
+    time      = Column(Time,  nullable=False)
+    lane      = Column(Integer, nullable=False)
+    trainer   = Column(String(50), nullable=False)
 
-    user = relationship("User", back_populates="bookings")
+    user      = relationship("User", back_populates="bookings")
 
-
-# --- Инициализация и миграции ------------------------------------------------
+# --- Инициализация и миграция ------------------------------------------------
 def init_db():
     # 1) Проверка подключения
     try:
@@ -103,7 +95,7 @@ def init_db():
         st.error(f"Не удалось подключиться к базе данных:\n{e}")
         st.stop()
 
-    # 2) Создание таблиц (не затрагивает уже существующие колонки)
+    # 2) Создание таблиц
     try:
         Base.metadata.create_all(bind=ENGINE)
     except DBAPIError as e:
@@ -116,12 +108,12 @@ def init_db():
     existing_cols = [col["name"] for col in inspector.get_columns("users")]
 
     migrations = {
-        'first_name': 'VARCHAR(50) NOT NULL DEFAULT ''',
-        'last_name': 'VARCHAR(50) NOT NULL DEFAULT ''',
-        'middle_name': 'VARCHAR(50)',
-        'phone': 'VARCHAR(20)',
-        'gender': 'VARCHAR(10)',
-        'email': 'VARCHAR(100) NOT NULL DEFAULT '''
+        'first_name':  "VARCHAR(50) NOT NULL DEFAULT ''",
+        'last_name':   "VARCHAR(50) NOT NULL DEFAULT ''",
+        'middle_name': "VARCHAR(50)",
+        'phone':       "VARCHAR(20)",
+        'gender':      "VARCHAR(10)",
+        'email':       "VARCHAR(100) NOT NULL DEFAULT ''"
     }
 
     with ENGINE.begin() as conn:
@@ -129,7 +121,7 @@ def init_db():
             if col not in existing_cols:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {definition}"))
 
-    # 4) Добавление дефолтных значений
+    # 4) Дефолтные данные
     from passlib.hash import bcrypt
     from datetime import time
 
