@@ -2,8 +2,6 @@ import streamlit as st
 import utils
 from datetime import date as dt_date
 
-TRAINERS = ["Тренер 1", "Тренер 2", "Тренер 3", "Тренер 4"]
-
 def booking_page():
     st.subheader("Бронирование дорожек и тренеров")
 
@@ -14,7 +12,7 @@ def booking_page():
         return
     sel_time = st.selectbox("Время", slots)
 
-    # --- проверяем занятость ---------------------------------------------------
+    # проверяем занятость
     busy_lanes, busy_trainers = utils.lane_trainer_status(sel_date, sel_time)
 
     free_lanes = [l for l in range(1, 7) if l not in busy_lanes]
@@ -23,9 +21,11 @@ def booking_page():
         return
     lane = st.selectbox("Дорожка", free_lanes)
 
-    free_trainers = [t for t in TRAINERS if t not in busy_trainers]
+    # доступные по расписанию и незанятые тренеры
+    scheduled = utils.get_scheduled_trainers(sel_date, sel_time)
+    free_trainers = [t for t in scheduled if t not in busy_trainers]
     if not free_trainers:
-        st.warning("На это время нет свободных тренеров.")
+        st.warning("На это время нет доступных тренеров.")
         return
     trainer = st.selectbox("Тренер", free_trainers)
 
