@@ -1,5 +1,8 @@
 import streamlit as st
+import logging
 import utils
+
+logger = logging.getLogger(__name__)
 
 def login():
     st.subheader("Вход")
@@ -9,11 +12,8 @@ def login():
     if st.button("Войти"):
         role = utils.validate_user(username, password)
         if role:
-            st.session_state.update(
-                logged_in=True,
-                username=username,
-                role=role,
-            )
+            st.session_state.update(logged_in=True, username=username, role=role)
+            logger.info(f"User '{username}' logged in as '{role}'")
             st.success("Успешный вход.")
             utils.safe_rerun()
         else:
@@ -29,6 +29,7 @@ def register():
             st.error("Заполните оба поля.")
             return
         if utils.add_user(username, password):
+            logger.info(f"Пользователь '{username}' зарегистрирован")
             st.success("Регистрация прошла успешно. Теперь войдите.")
         else:
             st.error("Пользователь уже существует.")
