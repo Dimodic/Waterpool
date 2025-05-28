@@ -39,6 +39,7 @@ class User(Base):
     phone        = Column(String(20), nullable=True)
     gender       = Column(String(10), nullable=True)
     email        = Column(String(100), unique=True, nullable=False, index=True)
+    is_confirmed = Column(Integer, default=0)  # 0 - не подтвержден, 1 - подтвержден
 
     bookings     = relationship("Booking", back_populates="user", cascade="all,delete")
 
@@ -69,6 +70,16 @@ class TrainerSchedule(Base):
     trainer      = relationship("Trainer", back_populates="schedules")
     timeslot     = relationship("Timeslot")
 
+class OrgBookingGroup(Base):
+    __tablename__ = "org_booking_groups"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    date = Column(Date, nullable=False)
+    time = Column(Time, nullable=False)  # legacy, для обратной совместимости
+    lanes = Column(String(50), nullable=False)  # Список дорожек через запятую
+    created_at = Column(String(30), nullable=True)
+    times = Column(String(200), nullable=True)  # Список времён через запятую
+
 class Booking(Base):
     __tablename__ = "bookings"
     __table_args__ = (
@@ -82,8 +93,17 @@ class Booking(Base):
     time      = Column(Time,  nullable=False)
     lane      = Column(Integer, nullable=False)
     trainer   = Column(String(50), nullable=False)
+    group_id  = Column(Integer, ForeignKey("org_booking_groups.id", ondelete="CASCADE"), nullable=True)
 
     user      = relationship("User", back_populates="bookings")
+
+class ClosedSlot(Base):
+    __tablename__ = "closed_slots"
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Date, nullable=False)
+    time = Column(Time, nullable=False)
+    comment = Column(String(200), nullable=True)
+    __table_args__ = (UniqueConstraint("date", "time", name="uq_closed_slot"),)
 
 # --- Инициализация и миграция ------------------------------------------------
 def init_db():
@@ -106,6 +126,8 @@ def init_db():
     # 3) Миграция: добавляем недостающие поля в users
     inspector = inspect(ENGINE)
     existing_cols = [col["name"] for col in inspector.get_columns("users")]
+    existing_booking_cols = [col["name"] for col in inspector.get_columns("bookings")]
+    existing_tables = inspector.get_table_names()
 
     migrations = {
         'first_name':  "VARCHAR(50) NOT NULL DEFAULT ''",
@@ -113,13 +135,34 @@ def init_db():
         'middle_name': "VARCHAR(50)",
         'phone':       "VARCHAR(20)",
         'gender':      "VARCHAR(10)",
-        'email':       "VARCHAR(100) NOT NULL DEFAULT ''"
+        'email':       "VARCHAR(100) NOT NULL DEFAULT ''",
+        'is_confirmed': "INTEGER NOT NULL DEFAULT 0"
     }
 
     with ENGINE.begin() as conn:
         for col, definition in migrations.items():
             if col not in existing_cols:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {definition}"))
+        # Добавляем group_id в bookings
+        if "group_id" not in existing_booking_cols:
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN group_id INTEGER REFERENCES org_booking_groups(id) ON DELETE CASCADE"))
+        # Создаём таблицу org_booking_groups если нет
+        if "org_booking_groups" not in existing_tables:
+            conn.execute(text("""
+                CREATE TABLE org_booking_groups (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+                    date DATE NOT NULL,
+                    time TIME NOT NULL,
+                    lanes VARCHAR(50) NOT NULL,
+                    created_at VARCHAR(30),
+                    times VARCHAR(200)
+                )
+            """))
+        # Добавляем times в org_booking_groups
+        existing_org_group_cols = [col["name"] for col in inspector.get_columns("org_booking_groups")] if "org_booking_groups" in existing_tables else []
+        if "org_booking_groups" in existing_tables and "times" not in existing_org_group_cols:
+            conn.execute(text("ALTER TABLE org_booking_groups ADD COLUMN times VARCHAR(200)"))
 
     # 4) Дефолтные данные
     from passlib.hash import bcrypt

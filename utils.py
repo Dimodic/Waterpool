@@ -4,7 +4,7 @@ from passlib.hash import bcrypt
 
 from db import (
     SessionLocal, User, Timeslot, Booking,
-    Trainer, TrainerSchedule
+    Trainer, TrainerSchedule, OrgBookingGroup, ClosedSlot
 )
 
 # --------------------- Streamlit helper --------------------------------------
@@ -24,7 +24,9 @@ def add_user(
     phone: str,
     gender: str,
     email: str,
-    role: str = "user"
+    role: str = "user",
+    org_name: str = None,
+    is_confirmed: int = 0
 ) -> bool:
     with SessionLocal() as db:
         # Проверяем уникальность по username и email
@@ -38,10 +40,11 @@ def add_user(
             role=role,
             first_name=first_name,
             last_name=last_name,
-            middle_name=middle_name,
+            middle_name=org_name if role == "org" else middle_name,
             phone=phone,
             gender=gender,
-            email=email
+            email=email,
+            is_confirmed=is_confirmed
         )
         db.add(user)
         db.commit()
@@ -69,9 +72,22 @@ def list_users():
                 "phone": u.phone or "",
                 "gender": u.gender or "",
                 "email": u.email,
+                "is_confirmed": u.is_confirmed,
             }
             for u in users
         ]
+
+def confirm_user(user_id: int):
+    with SessionLocal() as db:
+        user = db.query(User).filter_by(id=user_id).first()
+        if user:
+            user.is_confirmed = 1
+            db.commit()
+
+def remove_user(user_id: int):
+    with SessionLocal() as db:
+        db.query(User).filter_by(id=user_id).delete()
+        db.commit()
 
 # ------------------ Тайм-слоты -----------------------------------------------
 def list_timeslots():
@@ -178,17 +194,109 @@ def get_scheduled_trainers(date, time_str):
         ).all()
         return [s.trainer.name for s in sch]
 
-def add_booking(username, date, time_str, lane, trainer):
+def add_org_booking_group(username, date, times, lanes):
+    from datetime import datetime
+    with SessionLocal() as db:
+        user = db.query(User).filter_by(username=username).first()
+        if not user:
+            return False
+        # times — список строк ('09:00', ...)
+        group = OrgBookingGroup(
+            user_id=user.id,
+            date=date,
+            time=datetime.strptime(times[0], "%H:%M").time(),  # для обратной совместимости
+            lanes=','.join(str(l) for l in lanes),
+            times=','.join(times)
+        )
+        db.add(group)
+        db.commit()
+        # Создаём отдельные брони для каждой дорожки и каждого времени
+        for time_str in times:
+            t = datetime.strptime(time_str, "%H:%M").time()
+            for lane in lanes:
+                db.add(Booking(
+                    user_id=user.id,
+                    date=date,
+                    time=t,
+                    lane=lane,
+                    trainer=f"org_lane_{lane}",
+                    group_id=group.id
+                ))
+        try:
+            db.commit()
+            return True
+        except Exception:
+            db.rollback()
+            return False
+
+def list_org_booking_groups(username):
+    with SessionLocal() as db:
+        user = db.query(User).filter_by(username=username).first()
+        if not user:
+            return []
+        groups = db.query(OrgBookingGroup).filter_by(user_id=user.id).order_by(OrgBookingGroup.date.desc(), OrgBookingGroup.time.desc()).all()
+        return [
+            {
+                "id": g.id,
+                "date": g.date,
+                "times": g.times or g.time.strftime("%H:%M"),
+                "lanes": g.lanes,
+            }
+            for g in groups
+        ]
+
+def remove_org_booking_group(group_id):
+    with SessionLocal() as db:
+        db.query(OrgBookingGroup).filter_by(id=group_id).delete()
+        db.query(Booking).filter_by(group_id=group_id).delete()
+        db.commit()
+
+def update_org_booking_group(group_id, date, time_str, lanes):
+    from datetime import datetime
+    t = datetime.strptime(time_str, "%H:%M").time()
+    with SessionLocal() as db:
+        group = db.query(OrgBookingGroup).filter_by(id=group_id).first()
+        if not group:
+            return False
+        group.date = date
+        group.time = t
+        group.lanes = ','.join(str(l) for l in lanes)
+        # Удаляем старые брони
+        db.query(Booking).filter_by(group_id=group_id).delete()
+        # Добавляем новые брони
+        user_id = group.user_id
+        for lane in lanes:
+            db.add(Booking(
+                user_id=user_id,
+                date=date,
+                time=t,
+                lane=lane,
+                trainer=f"org_lane_{lane}",
+                group_id=group_id
+            ))
+        try:
+            db.commit()
+            return True
+        except Exception:
+            db.rollback()
+            return False
+
+def add_booking(username, date, time_str, lane, trainer, group_id=None):
     from datetime import datetime
     t = datetime.strptime(time_str, "%H:%M").time()
     with SessionLocal() as db:
         user = db.query(User).filter_by(username=username).first()
+        # Для обычных пользователей требуется подтверждение, для org — нет
+        if not user or (user.role != "org" and not user.is_confirmed):
+            return False
+        trainer_val = trainer if trainer else ""
         db.add(Booking(
             user_id=user.id,
             date=date,
             time=t,
             lane=lane,
-            trainer=trainer,
+            trainer=trainer_val,
+            group_id=group_id
         ))
         try:
             db.commit()
@@ -196,3 +304,101 @@ def add_booking(username, date, time_str, lane, trainer):
         except Exception:
             db.rollback()
             return False
+
+def list_user_bookings(username: str):
+    with SessionLocal() as db:
+        user = db.query(User).filter_by(username=username).first()
+        if not user:
+            return []
+        bookings = db.query(Booking).filter_by(user_id=user.id).all()
+        return [
+            {
+                "id": b.id,
+                "date": b.date,
+                "time": b.time.strftime("%H:%M"),
+                "lane": b.lane,
+                "trainer": b.trainer,
+            }
+            for b in bookings
+        ]
+
+def remove_booking(booking_id: int):
+    with SessionLocal() as db:
+        db.query(Booking).filter_by(id=booking_id).delete()
+        db.commit()
+
+def update_booking(booking_id: int, date, time_str, lane, trainer):
+    from datetime import datetime
+    t = datetime.strptime(time_str, "%H:%M").time()
+    with SessionLocal() as db:
+        booking = db.query(Booking).filter_by(id=booking_id).first()
+        if booking:
+            booking.date = date
+            booking.time = t
+            booking.lane = lane
+            booking.trainer = trainer if trainer else ""
+            db.commit()
+            return True
+        return False
+
+def list_all_bookings_for_date(date):
+    with SessionLocal() as db:
+        bookings = db.query(Booking).filter_by(date=date).all()
+        return [
+            {
+                "id": b.id,
+                "user": b.user.username if b.user else "",
+                "date": b.date,
+                "time": b.time.strftime("%H:%M"),
+                "lane": b.lane,
+                "trainer": b.trainer,
+            }
+            for b in bookings
+        ]
+
+# ------------------ Закрытые слоты ------------------------------------------
+def list_closed_slots(date):
+    with SessionLocal() as db:
+        slots = db.query(ClosedSlot).filter_by(date=date).order_by(ClosedSlot.time).all()
+        return [
+            {"id": s.id, "date": s.date, "time": s.time.strftime("%H:%M"), "comment": s.comment}
+            for s in slots
+        ]
+
+def add_closed_slot(date, time_str, comment=None):
+    from datetime import datetime
+    t = datetime.strptime(time_str, "%H:%M").time()
+    with SessionLocal() as db:
+        if db.query(ClosedSlot).filter_by(date=date, time=t).first():
+            return False
+        db.add(ClosedSlot(date=date, time=t, comment=comment))
+        db.commit()
+        return True
+
+def add_closed_slots_range(date, start_time_str, end_time_str, comment=None):
+    from datetime import datetime
+    timeslots = list_timeslots()
+    try:
+        start_idx = timeslots.index(start_time_str)
+        end_idx = timeslots.index(end_time_str)
+    except ValueError:
+        return 0
+    if start_idx > end_idx:
+        return 0
+    count = 0
+    for t_str in timeslots[start_idx:end_idx+1]:
+        if add_closed_slot(date, t_str, comment):
+            count += 1
+    return count
+
+def remove_closed_slot(slot_id):
+    with SessionLocal() as db:
+        db.query(ClosedSlot).filter_by(id=slot_id).delete()
+        db.commit()
+        return True
+
+def is_slot_closed(date, time_str):
+    from datetime import datetime
+    t = datetime.strptime(time_str, "%H:%M").time()
+    with SessionLocal() as db:
+        return db.query(ClosedSlot).filter_by(date=date, time=t).first() is not None

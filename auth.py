@@ -9,15 +9,32 @@ def login():
     if st.button("Войти"):
         role = utils.validate_user(username, password)
         if role:
-            st.session_state.update(
-                logged_in=True,
-                username=username,
-                role=role,
-            )
+            import utils as _utils
+            with _utils.SessionLocal() as db:
+                user = db.query(_utils.User).filter_by(username=username).first()
+                st.session_state.update(
+                    logged_in=True,
+                    username=username,
+                    role=role,
+                )
+                if user and not user.is_confirmed and role != "admin":
+                    st.warning("Ваша регистрация ожидает подтверждения администрацией. Пожалуйста, принесите все необходимые бумаги в бассейн.")
+                    return
             st.success("Успешный вход.")
             utils.safe_rerun()
         else:
             st.error("Неверный логин или пароль.")
+
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Зарегистрироваться"):
+            st.session_state["auth_page"] = "register"
+            utils.safe_rerun()
+    with col2:
+        if st.button("Регистрация для юр. лиц"):
+            st.session_state["auth_page"] = "register_org"
+            utils.safe_rerun()
 
 def register():
     st.subheader("Регистрация")
@@ -41,7 +58,56 @@ def register():
             phone, gender, email
         )
         if success:
-            st.success("Регистрация прошла успешно. Теперь войдите.")
+            role = utils.validate_user(username, password)
+            st.session_state.update(
+                logged_in=True,
+                username=username,
+                role=role,
+            )
+            st.warning("Ваша регистрация прошла успешно, но ожидает подтверждения администрацией. Пожалуйста, принесите все необходимые бумаги в бассейн.")
             utils.safe_rerun()
         else:
             st.error("Пользователь с таким логином или email уже существует.")
+
+    st.markdown("---")
+    if st.button("Назад ко входу"):
+        st.session_state["auth_page"] = "login"
+        utils.safe_rerun()
+
+def register_org():
+    st.subheader("Регистрация для юридических лиц")
+    username     = st.text_input("Логин", key="regorg_username")
+    password     = st.text_input("Пароль", type="password", key="regorg_password")
+    org_name     = st.text_input("Название организации", key="regorg_orgname")
+    contact_name = st.text_input("Контактное лицо", key="regorg_contact_name")
+    phone        = st.text_input("Телефон", key="regorg_phone")
+    email        = st.text_input("Email", key="regorg_email")
+
+    if st.button("Зарегистрироваться как юр. лицо"):
+        if not all([username, password, org_name, contact_name, phone, email]):
+            st.error("Заполните все обязательные поля.")
+            return
+        # Регистрируем с ролью org и без подтверждения
+        success = utils.add_user(
+            username, password,
+            contact_name, "", "",
+            phone, "", email,
+            role="org",
+            org_name=org_name,
+            is_confirmed=1
+        )
+        if success:
+            st.session_state.update(
+                logged_in=True,
+                username=username,
+                role="org",
+            )
+            st.success("Регистрация организации прошла успешно. Вы вошли в систему.")
+            utils.safe_rerun()
+        else:
+            st.error("Пользователь с таким логином или email уже существует.")
+
+    st.markdown("---")
+    if st.button("Назад ко входу", key="org_back"):
+        st.session_state["auth_page"] = "login"
+        utils.safe_rerun()

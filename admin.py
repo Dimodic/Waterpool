@@ -1,7 +1,8 @@
 import streamlit as st
+st.set_page_config(layout='wide')
 import pandas as pd
 import utils
-from datetime import time as dt_time
+from datetime import time as dt_time, date as dt_date
 
 def admin_page():
     st.sidebar.title("Администрирование")
@@ -9,7 +10,8 @@ def admin_page():
         "Слоты",
         "Тренеры",
         "Расписание тренеров",
-        "Пользователи"
+        "Пользователи",
+        "Бронирования"
     ])
 
     if section == "Слоты":
@@ -20,6 +22,8 @@ def admin_page():
         manage_trainer_schedule()
     elif section == "Пользователи":
         manage_users()
+    elif section == "Бронирования":
+        manage_bookings()
 
 def manage_timeslots():
     st.subheader("Управление слотами")
@@ -40,6 +44,52 @@ def manage_timeslots():
             utils.remove_timeslot(rem)
             st.success(f"Удалён {rem}")
             utils.safe_rerun()
+
+    st.markdown("---")
+    st.subheader("Закрытые слоты на дату")
+    sel_date = st.date_input("Дата для управления закрытыми слотами", value=dt_date.today(), key="closed_slots_date")
+    closed = utils.list_closed_slots(sel_date)
+    if closed:
+        st.write("Закрытые интервалы:")
+        header_cols = st.columns([2,2,4,1])
+        for col, text in zip(header_cols, ["Время", "Дата", "Комментарий", "Удалить"]):
+            col.write(text)
+        for row in closed:
+            cols = st.columns([2,2,4,1])
+            with cols[0]:
+                st.write(row["time"])
+            with cols[1]:
+                st.write(str(row["date"]))
+            with cols[2]:
+                st.write(row["comment"] or "")
+            with cols[3]:
+                if st.button("🗑️", key=f"del_closed_{row['id']}"):
+                    utils.remove_closed_slot(row["id"])
+                    st.success("Слот снова доступен для бронирования")
+                    utils.safe_rerun()
+    else:
+        st.info("Нет закрытых слотов на выбранную дату.")
+
+    st.markdown("---")
+    st.subheader("Закрыть интервалы на дату по диапазону")
+    col1, col2 = st.columns(2)
+    with col1:
+        start_time = st.selectbox("Время начала (закрыть с)", current, key="closed_start_time")
+    with col2:
+        end_time = st.selectbox("Время конца (закрыть по)", current, index=len(current)-1, key="closed_end_time")
+    comment = st.text_input("Комментарий (необязательно)", key="closed_comment")
+    if st.button("Закрыть выбранные интервалы"):
+        start_idx = current.index(start_time)
+        end_idx = current.index(end_time)
+        if start_idx > end_idx:
+            st.warning("Время начала не может быть позже времени конца!")
+        else:
+            count = utils.add_closed_slots_range(sel_date, start_time, end_time, comment)
+            if count:
+                st.success(f"Закрыто {count} интервал(ов) на {sel_date}")
+                utils.safe_rerun()
+            else:
+                st.warning("Ни один слот не был закрыт (возможно, уже закрыты или ошибка диапазона)")
 
 def manage_trainers():
     st.subheader("Управление тренерами")
@@ -63,40 +113,60 @@ def manage_trainers():
 
 def manage_trainer_schedule():
     st.subheader("Управление расписанием тренеров")
-    schedules = utils.list_trainer_schedule()
-    if schedules:
-        df_sch = pd.DataFrame(schedules)
-        # Преобразуем день недели в текст для наглядности
-        dow_map = {0:"Пн",1:"Вт",2:"Ср",3:"Чт",4:"Пт",5:"Сб",6:"Вс"}
-        df_sch["day"] = df_sch["day_of_week"].map(dow_map)
-        st.dataframe(df_sch[["id","trainer","day","time"]])
-
     trainers  = utils.list_trainers()
     trainer   = st.selectbox("Тренер", trainers, key="sch_trainer")
+    schedules = utils.list_trainer_schedule()
+    # Фильтруем расписание по выбранному тренеру
+    filtered = [s for s in schedules if s["trainer"] == trainer]
+    if filtered:
+        df = pd.DataFrame(filtered)
+        header_cols = st.columns([2,2,2,2,1])
+        headers = ["Тренер", "День недели", "Время", "ID", "Удалить"]
+        for col, text in zip(header_cols, headers):
+            col.write(text)
+        day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
+        for i, row in df.iterrows():
+            cols = st.columns([2,2,2,2,1])
+            with cols[0]:
+                st.write(row["trainer"])
+            with cols[1]:
+                st.write(day_names[row["day_of_week"]])
+            with cols[2]:
+                st.write(row["time"])
+            with cols[3]:
+                st.write(row["id"])
+            with cols[4]:
+                if st.button("🗑️", key=f"del_sched_{row['id']}"):
+                    utils.remove_trainer_schedule(row["id"])
+                    st.success("Запись удалена")
+                    utils.safe_rerun()
+    else:
+        st.info("Нет расписания для выбранного тренера.")
+
     day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
     day       = st.selectbox("День недели", day_names, key="sch_day")
     timeslots = utils.list_timeslots()
-    time_sel  = st.selectbox("Время", timeslots, key="sch_time")
-
+    col_time1, col_time2 = st.columns(2)
+    with col_time1:
+        start_time = st.selectbox("Время начала", timeslots, key="sch_time_start")
+    with col_time2:
+        end_time = st.selectbox("Время конца", timeslots, index=len(timeslots)-1, key="sch_time_end")
     dow_map = {name: idx for idx, name in enumerate(day_names)}
     if st.button("Добавить в расписание"):
-        if utils.add_trainer_schedule(trainer, dow_map[day], time_sel):
-            st.success("Запись добавлена в расписание")
-            utils.safe_rerun()
+        start_idx = timeslots.index(start_time)
+        end_idx = timeslots.index(end_time)
+        if start_idx > end_idx:
+            st.warning("Время начала не может быть позже времени конца!")
         else:
-            st.warning("Такая запись уже существует или неверные данные.")
-
-    if schedules:
-        opts = [
-            f"{s['id']}: {s['trainer']}, {day_names[s['day_of_week']]} {s['time']}"
-            for s in schedules
-        ]
-        sel = st.selectbox("Удалить запись", opts, key="del_sched")
-        if st.button("Удалить из расписания"):
-            sched_id = int(sel.split(":")[0])
-            utils.remove_trainer_schedule(sched_id)
-            st.success("Запись удалена")
-            utils.safe_rerun()
+            ok_all = True
+            for t in timeslots[start_idx:end_idx+1]:
+                ok = utils.add_trainer_schedule(trainer, dow_map[day], t)
+                ok_all = ok_all and ok
+            if ok_all:
+                st.success("Записи добавлены в расписание")
+                utils.safe_rerun()
+            else:
+                st.warning("Некоторые записи уже существуют или неверные данные.")
 
 def manage_users():
     st.subheader("Список пользователей")
@@ -107,4 +177,80 @@ def manage_users():
         mask = df.apply(lambda row: row.astype(str)
                         .str.contains(search, case=False).any(), axis=1)
         df = df[mask]
-    st.dataframe(df)
+    if df.empty:
+        st.info("Нет пользователей по вашему запросу.")
+        return
+    # Заголовки
+    header_cols = st.columns([3,2,2,3,2,2,2,2,2])
+    headers = [
+        "Логин", "Имя", "Фамилия", "Email", "Телефон", "Роль", "Статус", "Подтвердить", "Удалить"
+    ]
+    for col, text in zip(header_cols, headers):
+        col.write(text)
+    # Данные
+    for i, row in df.iterrows():
+        color_class = "confirmed" if row["is_confirmed"] else "not-confirmed"
+        with st.container():
+            cols = st.columns([3,2,2,3,2,2,2,2,2])
+            with cols[0]:
+                st.write(row["username"])
+            with cols[1]:
+                st.write(row["first_name"])
+            with cols[2]:
+                st.write(row["last_name"])
+            with cols[3]:
+                st.write(row["email"])
+            with cols[4]:
+                st.write(row["phone"])
+            with cols[5]:
+                st.write(row["role"])
+            with cols[6]:
+                st.write("Подтвержден" if row["is_confirmed"] else "Ожидает подтверждения")
+            with cols[7]:
+                if not row["is_confirmed"]:
+                    if st.button("\u2705", key=f"confirm_{row['id']}"):
+                        utils.confirm_user(row["id"])
+                        st.success(f"Пользователь {row['username']} подтвержден")
+                        utils.safe_rerun()
+            with cols[8]:
+                if row["username"] != "admin":
+                    if st.button("\U0001F5D1", key=f"delete_{row['id']}"):
+                        utils.remove_user(row["id"])
+                        st.success(f"Пользователь {row['username']} удален")
+                        utils.safe_rerun()
+
+def manage_bookings():
+    st.subheader("Бронирования на выбранный день")
+    from datetime import date as dt_date
+    sel_date = st.date_input("Дата", value=dt_date.today(), key="admin_bookings_date")
+    all_bookings = utils.list_all_bookings_for_date(sel_date)
+    if not all_bookings:
+        st.info("На выбранный день нет бронирований.")
+        return
+    # Заголовки
+    header_cols = st.columns([2,2,2,2,2,2,1])
+    headers = [
+        "Пользователь", "Дата", "Время", "Дорожка", "Тренер", "ID", "Удалить"
+    ]
+    for col, text in zip(header_cols, headers):
+        col.write(text)
+    # Данные
+    for row in all_bookings:
+        cols = st.columns([2,2,2,2,2,2,1])
+        with cols[0]:
+            st.write(row["user"])
+        with cols[1]:
+            st.write(str(row["date"]))
+        with cols[2]:
+            st.write(row["time"])
+        with cols[3]:
+            st.write(row["lane"])
+        with cols[4]:
+            st.write(row["trainer"])
+        with cols[5]:
+            st.write(row["id"])
+        with cols[6]:
+            if st.button("🗑️", key=f"admin_del_booking_{row['id']}"):
+                utils.remove_booking(row["id"])
+                st.success("Бронирование удалено")
+                utils.safe_rerun()
