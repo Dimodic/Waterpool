@@ -113,20 +113,22 @@ def manage_trainers():
 
 def manage_trainer_schedule():
     st.subheader("Управление расписанием тренеров")
-    trainers  = utils.list_trainers()
-    trainer   = st.selectbox("Тренер", trainers, key="sch_trainer")
+
+    # Инициализируем флаг для открытия формы добавления
+    st.session_state.setdefault("show_add_trainer_schedule", False)
+
+    # Получаем все записи расписания
     schedules = utils.list_trainer_schedule()
-    # Фильтруем расписание по выбранному тренеру
-    filtered = [s for s in schedules if s["trainer"] == trainer]
-    if filtered:
-        df = pd.DataFrame(filtered)
-        header_cols = st.columns([2,2,2,2,1])
-        headers = ["Тренер", "День недели", "Время", "ID", "Удалить"]
-        for col, text in zip(header_cols, headers):
+    day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
+
+    # Если есть записи, отображаем таблицу для всех тренеров сразу
+    if schedules:
+        header_cols = st.columns([2,2,2,1])
+        for col, text in zip(header_cols, ["Тренер", "День недели", "Время", "Удалить"]):
             col.write(text)
-        day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
-        for i, row in df.iterrows():
-            cols = st.columns([2,2,2,2,1])
+
+        for row in schedules:
+            cols = st.columns([2,2,2,1])
             with cols[0]:
                 st.write(row["trainer"])
             with cols[1]:
@@ -134,39 +136,60 @@ def manage_trainer_schedule():
             with cols[2]:
                 st.write(row["time"])
             with cols[3]:
-                st.write(row["id"])
-            with cols[4]:
+                # Кнопка удаления, скрывая сам ID
                 if st.button("🗑️", key=f"del_sched_{row['id']}"):
                     utils.remove_trainer_schedule(row["id"])
                     st.success("Запись удалена")
                     utils.safe_rerun()
     else:
-        st.info("Нет расписания для выбранного тренера.")
+        st.info("Нет записей в расписании.")
 
-    day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
-    day       = st.selectbox("День недели", day_names, key="sch_day")
-    timeslots = utils.list_timeslots()
-    col_time1, col_time2 = st.columns(2)
-    with col_time1:
-        start_time = st.selectbox("Время начала", timeslots, key="sch_time_start")
-    with col_time2:
-        end_time = st.selectbox("Время конца", timeslots, index=len(timeslots)-1, key="sch_time_end")
-    dow_map = {name: idx for idx, name in enumerate(day_names)}
-    if st.button("Добавить в расписание"):
-        start_idx = timeslots.index(start_time)
-        end_idx = timeslots.index(end_time)
-        if start_idx > end_idx:
-            st.warning("Время начала не может быть позже времени конца!")
+    st.markdown("---")
+    # Кнопка для открытия формы добавления расписания
+    if not st.session_state["show_add_trainer_schedule"]:
+        if st.button("Добавить расписание"):
+            st.session_state["show_add_trainer_schedule"] = True
+
+    # Форма добавления расписания тренеру
+    if st.session_state["show_add_trainer_schedule"]:
+        st.markdown("#### Добавить записи в расписание")
+        trainers = utils.list_trainers()
+        if not trainers:
+            st.warning("Сначала добавьте хотя бы одного тренера в разделе «Тренеры».")
         else:
-            ok_all = True
-            for t in timeslots[start_idx:end_idx+1]:
-                ok = utils.add_trainer_schedule(trainer, dow_map[day], t)
-                ok_all = ok_all and ok
-            if ok_all:
-                st.success("Записи добавлены в расписание")
-                utils.safe_rerun()
-            else:
-                st.warning("Некоторые записи уже существуют или неверные данные.")
+            trainer = st.selectbox("Тренер", trainers, key="new_sch_trainer")
+            day = st.selectbox("День недели", day_names, key="new_sch_day")
+            timeslots = utils.list_timeslots()
+            col_time1, col_time2 = st.columns(2)
+            with col_time1:
+                start_time = st.selectbox("Время начала", timeslots, key="new_sch_time_start")
+            with col_time2:
+                end_time = st.selectbox("Время конца", timeslots, index=len(timeslots)-1, key="new_sch_time_end")
+            dow_map = {name: idx for idx, name in enumerate(day_names)}
+
+            col_btn1, col_btn2 = st.columns([1,1])
+            with col_btn1:
+                if st.button("Добавить", key="add_trainer_schedule_btn"):
+                    start_idx = timeslots.index(start_time)
+                    end_idx = timeslots.index(end_time)
+                    if start_idx > end_idx:
+                        st.warning("Время начала не может быть позже времени конца!")
+                    else:
+                        ok_all = True
+                        for t in timeslots[start_idx:end_idx+1]:
+                            ok = utils.add_trainer_schedule(trainer, dow_map[day], t)
+                            ok_all = ok_all and ok
+                        if ok_all:
+                            st.success("Записи добавлены в расписание")
+                        else:
+                            st.warning("Некоторые записи уже существуют или возникла ошибка.")
+                        # Закрываем форму и обновляем страницу
+                        st.session_state["show_add_trainer_schedule"] = False
+                        utils.safe_rerun()
+            with col_btn2:
+                if st.button("Отмена", key="cancel_trainer_schedule"):
+                    st.session_state["show_add_trainer_schedule"] = False
+                    utils.safe_rerun()
 
 def manage_users():
     st.subheader("Список пользователей")
@@ -188,8 +211,7 @@ def manage_users():
     for col, text in zip(header_cols, headers):
         col.write(text)
     # Данные
-    for i, row in df.iterrows():
-        color_class = "confirmed" if row["is_confirmed"] else "not-confirmed"
+    for _, row in df.iterrows():
         with st.container():
             cols = st.columns([3,2,2,3,2,2,2,2,2])
             with cols[0]:
