@@ -112,37 +112,61 @@ def manage_trainers():
             utils.safe_rerun()
 
 def manage_trainer_schedule():
-    st.subheader("Расписание тренеров и занятость дорожек")
+    st.subheader("Управление расписанием тренеров")
+    trainers  = utils.list_trainers()
+    trainer   = st.selectbox("Тренер", trainers, key="sch_trainer")
+    schedules = utils.list_trainer_schedule()
+    # Фильтруем расписание по выбранному тренеру
+    filtered = [s for s in schedules if s["trainer"] == trainer]
+    if filtered:
+        df = pd.DataFrame(filtered)
+        header_cols = st.columns([2,2,2,2,1])
+        headers = ["Тренер", "День недели", "Время", "ID", "Удалить"]
+        for col, text in zip(header_cols, headers):
+            col.write(text)
+        day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
+        for i, row in df.iterrows():
+            cols = st.columns([2,2,2,2,1])
+            with cols[0]:
+                st.write(row["trainer"])
+            with cols[1]:
+                st.write(day_names[row["day_of_week"]])
+            with cols[2]:
+                st.write(row["time"])
+            with cols[3]:
+                st.write(row["id"])
+            with cols[4]:
+                if st.button("🗑️", key=f"del_sched_{row['id']}"):
+                    utils.remove_trainer_schedule(row["id"])
+                    st.success("Запись удалена")
+                    utils.safe_rerun()
+    else:
+        st.info("Нет расписания для выбранного тренера.")
 
-    # Выбор даты для просмотра расписания
-    sel_date = st.date_input("Дата", value=dt_date.today(), key="schedule_date")
-
-    # Получаем список всех тайм-слотов и всех тренеров
-    slots = utils.list_timeslots()
-    trainers = utils.list_trainers()
-
-    if not slots or not trainers:
-        st.info("Нет данных для формирования расписания.")
-        return
-
-    # Создаем DataFrame: строки = время, колонки = тренеры, заполняем "Свободен"
-    df = pd.DataFrame("Свободен", index=slots, columns=trainers)
-
-    # Получаем все бронирования на выбранную дату
-    all_bookings = utils.list_all_bookings_for_date(sel_date)
-
-    # Заполняем таблицу: если у тренера есть бронь, отображаем номер дорожки
-    for b in all_bookings:
-        tr_name = b["trainer"]
-        time_str = b["time"]
-        lane = b["lane"]
-        # Пропускаем записи без привязанного тренера или несуществующих в списке
-        if not tr_name or tr_name not in trainers:
-            continue
-        df.at[time_str, tr_name] = f"Дорожка {lane}"
-
-    # Отображаем таблицу с полным расписанием тренеров
-    st.dataframe(df)
+    day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
+    day       = st.selectbox("День недели", day_names, key="sch_day")
+    timeslots = utils.list_timeslots()
+    col_time1, col_time2 = st.columns(2)
+    with col_time1:
+        start_time = st.selectbox("Время начала", timeslots, key="sch_time_start")
+    with col_time2:
+        end_time = st.selectbox("Время конца", timeslots, index=len(timeslots)-1, key="sch_time_end")
+    dow_map = {name: idx for idx, name in enumerate(day_names)}
+    if st.button("Добавить в расписание"):
+        start_idx = timeslots.index(start_time)
+        end_idx = timeslots.index(end_time)
+        if start_idx > end_idx:
+            st.warning("Время начала не может быть позже времени конца!")
+        else:
+            ok_all = True
+            for t in timeslots[start_idx:end_idx+1]:
+                ok = utils.add_trainer_schedule(trainer, dow_map[day], t)
+                ok_all = ok_all and ok
+            if ok_all:
+                st.success("Записи добавлены в расписание")
+                utils.safe_rerun()
+            else:
+                st.warning("Некоторые записи уже существуют или неверные данные.")
 
 def manage_users():
     st.subheader("Список пользователей")
@@ -197,21 +221,22 @@ def manage_users():
 
 def manage_bookings():
     st.subheader("Бронирования на выбранный день")
+    from datetime import date as dt_date
     sel_date = st.date_input("Дата", value=dt_date.today(), key="admin_bookings_date")
     all_bookings = utils.list_all_bookings_for_date(sel_date)
     if not all_bookings:
         st.info("На выбранный день нет бронирований.")
         return
-    # Заголовки (без колонки ID)
-    header_cols = st.columns([2,2,2,2,2,1])
+    # Заголовки
+    header_cols = st.columns([2,2,2,2,2,2,1])
     headers = [
-        "Пользователь", "Дата", "Время", "Дорожка", "Тренер", "Удалить"
+        "Пользователь", "Дата", "Время", "Дорожка", "Тренер", "ID", "Удалить"
     ]
     for col, text in zip(header_cols, headers):
         col.write(text)
-    # Данные (скрываем ID, но используем его в кнопках удаления)
+    # Данные
     for row in all_bookings:
-        cols = st.columns([2,2,2,2,2,1])
+        cols = st.columns([2,2,2,2,2,2,1])
         with cols[0]:
             st.write(row["user"])
         with cols[1]:
@@ -223,6 +248,8 @@ def manage_bookings():
         with cols[4]:
             st.write(row["trainer"])
         with cols[5]:
+            st.write(row["id"])
+        with cols[6]:
             if st.button("🗑️", key=f"admin_del_booking_{row['id']}"):
                 utils.remove_booking(row["id"])
                 st.success("Бронирование удалено")
