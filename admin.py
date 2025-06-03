@@ -3,7 +3,7 @@ import streamlit as st
 st.set_page_config(layout='wide')
 import pandas as pd
 import utils
-from datetime import datetime, timedelta, date as dt_date, time as dt_time
+from datetime import datetime, timedelta, date as dt_date
 
 def admin_page():
     st.sidebar.title("Администрирование")
@@ -31,96 +31,103 @@ def manage_timeslots():
     st.subheader("Управление слотами (закрытые слоты)")
 
     # Инициализируем начало недели (понедельник)
-    if "week_start" not in st.session_state:
+    if "week_start_admin" not in st.session_state:
         today = dt_date.today()
-        st.session_state.week_start = today - timedelta(days=today.weekday())
+        st.session_state.week_start_admin = today - timedelta(days=today.weekday())
 
     # Навигация между неделями и выбор конкретной даты
     nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 3])
     with nav_col1:
         if st.button("<< Предыдущая неделя"):
-            st.session_state.week_start -= timedelta(days=7)
+            st.session_state.week_start_admin -= timedelta(days=7)
             utils.safe_rerun()
     with nav_col2:
         if st.button("Следующая неделя >>"):
-            st.session_state.week_start += timedelta(days=7)
+            st.session_state.week_start_admin += timedelta(days=7)
             utils.safe_rerun()
     with nav_col3:
         picked = st.date_input(
             label="Выберите любую дату недели",
-            value=st.session_state.week_start,
-            key="pick_date_for_week"
+            value=st.session_state.week_start_admin,
+            key="pick_date_for_week_admin"
         )
-        # Если пользователь выбрал дату, пересчитываем начало недели
-        if picked != st.session_state.week_start:
-            st.session_state.week_start = picked - timedelta(days=picked.weekday())
+        if picked != st.session_state.week_start_admin:
+            st.session_state.week_start_admin = picked - timedelta(days=picked.weekday())
             utils.safe_rerun()
 
     # Вычисляем все даты текущей недели (понедельник – воскресенье)
     week_dates = [
-        st.session_state.week_start + timedelta(days=i) for i in range(7)
+        st.session_state.week_start_admin + timedelta(days=i) for i in range(7)
     ]
-    # Форматируем для заголовков столбцов (напр.: "06.06 Пн")
+    # Формируем заголовки "дата + день недели"
     day_labels = [
-        date.strftime("%d.%m") + " " + ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][date.weekday()]
-        for date in week_dates
+        d.strftime("%d.%m") + " " + ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][d.weekday()]
+        for d in week_dates
     ]
 
-    # Получаем список всех базовых тайм-слотов (например, "09:00", "09:30" и т.д.)
-    timeslots = utils.list_timeslots()
+    # Базовые временные интервалы
+    timeslots = utils.list_timeslots()  # :contentReference[oaicite:0]{index=0}
 
-    # Собираем все закрытые слоты за эту неделю, чтобы быстро проверять
+    # Собираем закрытые слоты за неделю
     closed_map = {}  # {(дата, время): id_closed_slot}
     for single_date in week_dates:
-        closed_list = utils.list_closed_slots(single_date)
+        closed_list = utils.list_closed_slots(single_date)  # :contentReference[oaicite:1]{index=1}
         for item in closed_list:
             key = (item["date"], item["time"])
             closed_map[key] = item["id"]
 
-    # Строим «таблицу»: первая строка — заголовки дат
+    # Собираем бронирования за неделю
+    booking_map = set()  # {(дата, время) для слотов, где есть хотя бы одна бронь}
+    for single_date in week_dates:
+        all_b = utils.list_all_bookings_for_date(single_date)  # :contentReference[oaicite:2]{index=2}
+        for b in all_b:
+            booking_map.add((b["date"], b["time"]))
+
+    # Строим таблицу: первая строка — заголовки
     header_cols = st.columns([1] + [1]*7)
     header_cols[0].write("Время")
     for idx, label in enumerate(day_labels):
         header_cols[idx+1].write(label)
 
-    # Далее — по каждой временной метке выводим строку с 7 ячейками
+    # Для каждого времени выводим строки с ячейками
     for t in timeslots:
         row_cols = st.columns([1] + [1]*7)
         row_cols[0].write(t)
         for idx, single_date in enumerate(week_dates):
-            cell_key = f"cell_{single_date}_{t}"
+            cell_key = f"cell_admin_{single_date}_{t}"
             if (single_date, t) in closed_map:
-                # Если слот закрыт — показываем кнопку удаления
+                # Если слот закрыт — показ кнопки удаления
                 if row_cols[idx+1].button("❌", key=cell_key):
                     utils.remove_closed_slot(closed_map[(single_date, t)])
                     st.success(f"Слот {t} на {single_date} снова доступен")
                     utils.safe_rerun()
+            elif (single_date, t) in booking_map:
+                # Если есть бронь — показываем иконку
+                row_cols[idx+1].write("📌")
             else:
-                # Если слот открыт — просто оставляем ячейку пустой
+                # Иначе — пустая ячейка
                 row_cols[idx+1].write("")
 
     st.markdown("---")
-    # Форма для добавления нового закрытого слота вручную
+    # Форма для добавления нового закрытого слота
     st.markdown("#### Добавить новый закрытый слот")
     add_date = st.date_input(
         label="Дата слота",
         value=dt_date.today(),
-        key="add_closed_date"
+        key="add_closed_date_admin"
     )
     add_time = st.selectbox(
         label="Время слота",
         options=timeslots,
-        key="add_closed_time"
+        key="add_closed_time_admin"
     )
-    add_comment = st.text_input("Комментарий (необязательно)", key="add_closed_comment")
+    add_comment = st.text_input("Комментарий (необязательно)", key="add_closed_comment_admin")
 
     if st.button("Добавить закрытый слот"):
-        # Проверяем, не стоит ли уже такой закрытый слот
-        ok = utils.add_closed_slot(add_date, add_time, add_comment)
+        ok = utils.add_closed_slot(add_date, add_time, add_comment)  # :contentReference[oaicite:3]{index=3}
         if ok:
             st.success(f"Слот {add_time} на {add_date} закрыт")
-            # Если добавляем в текущую неделю, обновляем отображение
-            if st.session_state.week_start <= add_date < st.session_state.week_start + timedelta(days=7):
+            if st.session_state.week_start_admin <= add_date < st.session_state.week_start_admin + timedelta(days=7):
                 utils.safe_rerun()
         else:
             st.warning("Такой закрытый слот уже существует.")
@@ -149,14 +156,10 @@ def manage_trainers():
 def manage_trainer_schedule():
     st.subheader("Управление расписанием тренеров")
 
-    # Инициализируем флаг для открытия формы добавления
     st.session_state.setdefault("show_add_trainer_schedule", False)
-
-    # Получаем все записи расписания
     schedules = utils.list_trainer_schedule()
     day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
 
-    # Таблица для всех тренеров сразу
     if schedules:
         header_cols = st.columns([2,2,2,1])
         for col, text in zip(header_cols, ["Тренер", "День недели", "Время", "Удалить"]):
@@ -179,12 +182,10 @@ def manage_trainer_schedule():
         st.info("Нет записей в расписании.")
 
     st.markdown("---")
-    # Кнопка для открытия формы добавления расписания
     if not st.session_state["show_add_trainer_schedule"]:
         if st.button("Добавить расписание"):
             st.session_state["show_add_trainer_schedule"] = True
 
-    # Форма добавления расписания тренеру
     if st.session_state["show_add_trainer_schedule"]:
         st.markdown("#### Добавить записи в расписание")
         trainers = utils.list_trainers()
@@ -210,8 +211,8 @@ def manage_trainer_schedule():
                         st.warning("Время начала не может быть позже времени конца!")
                     else:
                         ok_all = True
-                        for t in timeslots[start_idx:end_idx+1]:
-                            ok = utils.add_trainer_schedule(trainer, dow_map[day], t)
+                        for tt in timeslots[start_idx:end_idx+1]:
+                            ok = utils.add_trainer_schedule(trainer, dow_map[day], tt)
                             ok_all = ok_all and ok
                         if ok_all:
                             st.success("Записи добавлены в расписание")
@@ -236,14 +237,14 @@ def manage_users():
     if df.empty:
         st.info("Нет пользователей по вашему запросу.")
         return
-    # Заголовки
+
     header_cols = st.columns([3,2,2,3,2,2,2,2,2])
     headers = [
         "Логин", "Имя", "Фамилия", "Email", "Телефон", "Роль", "Статус", "Подтвердить", "Удалить"
     ]
     for col, text in zip(header_cols, headers):
         col.write(text)
-    # Данные
+
     for _, row in df.iterrows():
         with st.container():
             cols = st.columns([3,2,2,3,2,2,2,2,2])
@@ -277,18 +278,18 @@ def manage_users():
 def manage_bookings():
     st.subheader("Бронирования на выбранный день")
     sel_date = st.date_input("Дата", value=dt_date.today(), key="admin_bookings_date")
-    all_bookings = utils.list_all_bookings_for_date(sel_date)
+    all_bookings = utils.list_all_bookings_for_date(sel_date)  # :contentReference[oaicite:4]{index=4}
     if not all_bookings:
         st.info("На выбранный день нет бронирований.")
         return
-    # Заголовки
+
     header_cols = st.columns([2,2,2,2,2,2,1])
     headers = [
         "Пользователь", "Дата", "Время", "Дорожка", "Тренер", "ID", "Удалить"
     ]
     for col, text in zip(header_cols, headers):
         col.write(text)
-    # Данные
+
     for row in all_bookings:
         cols = st.columns([2,2,2,2,2,2,1])
         with cols[0]:

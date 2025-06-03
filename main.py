@@ -1,6 +1,10 @@
 # main.py
 import streamlit as st
 import logging
+
+# 1) Широкий режим всего приложения
+st.set_page_config(layout='wide')
+
 from db import init_db
 import utils
 from auth import login, register, register_org
@@ -26,19 +30,21 @@ for key, val in [
     ("logged_in", False),
     ("username", ""),
     ("role", ""),
-    ("auth_page", "login")  # новое состояние: login или register
+    ("auth_page", "login")  # login / register / register_org
 ]:
     st.session_state.setdefault(key, val)
 
-# В этом месте заголовок удалён, как и просил пользователь
-
+# 2) Если пользователь не залогинен — показываем заголовок + форма входа/регистрации
 if not st.session_state["logged_in"]:
+    st.title("Система бронирования дорожек в бассейне")
     if st.session_state["auth_page"] == "login":
         login()
     elif st.session_state["auth_page"] == "register_org":
         register_org()
     else:
         register()
+
+# 3) Если залогинен, рисуем сайдбар и переключаемся по ролям
 else:
     st.sidebar.write(f"👤 **{st.session_state['username']}** ({st.session_state['role']})")
     if st.sidebar.button("Выход"):
@@ -47,7 +53,10 @@ else:
         logger.info(f"User '{user}' logged out")
         utils.safe_rerun()
 
-    if st.session_state["role"] == "admin":
-        admin_page()
-    else:
+    # 4) Если не админ — показываем заголовок + страницу броней
+    if st.session_state["role"] != "admin":
+        st.title("Система бронирования дорожек в бассейне")
         booking_page()
+    # 5) Если админ — переходим в админский раздел (заголовок уже не нужен)
+    else:
+        admin_page()
