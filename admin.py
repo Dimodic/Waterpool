@@ -1,6 +1,5 @@
 # admin.py
 import streamlit as st
-st.set_page_config(layout='wide')
 import pandas as pd
 import utils
 from datetime import datetime, timedelta, date as dt_date
@@ -66,12 +65,12 @@ def manage_timeslots():
     ]
 
     # Базовые временные интервалы
-    timeslots = utils.list_timeslots()  # :contentReference[oaicite:0]{index=0}
+    timeslots = utils.list_timeslots()
 
     # Собираем закрытые слоты за неделю
     closed_map = {}  # {(дата, время): id_closed_slot}
     for single_date in week_dates:
-        closed_list = utils.list_closed_slots(single_date)  # :contentReference[oaicite:1]{index=1}
+        closed_list = utils.list_closed_slots(single_date)
         for item in closed_list:
             key = (item["date"], item["time"])
             closed_map[key] = item["id"]
@@ -79,7 +78,7 @@ def manage_timeslots():
     # Собираем бронирования за неделю
     booking_map = set()  # {(дата, время) для слотов, где есть хотя бы одна бронь}
     for single_date in week_dates:
-        all_b = utils.list_all_bookings_for_date(single_date)  # :contentReference[oaicite:2]{index=2}
+        all_b = utils.list_all_bookings_for_date(single_date)
         for b in all_b:
             booking_map.add((b["date"], b["time"]))
 
@@ -124,7 +123,7 @@ def manage_timeslots():
     add_comment = st.text_input("Комментарий (необязательно)", key="add_closed_comment_admin")
 
     if st.button("Добавить закрытый слот"):
-        ok = utils.add_closed_slot(add_date, add_time, add_comment)  # :contentReference[oaicite:3]{index=3}
+        ok = utils.add_closed_slot(add_date, add_time, add_comment)
         if ok:
             st.success(f"Слот {add_time} на {add_date} закрыт")
             if st.session_state.week_start_admin <= add_date < st.session_state.week_start_admin + timedelta(days=7):
@@ -278,7 +277,7 @@ def manage_users():
 def manage_bookings():
     st.subheader("Бронирования на выбранный день")
     sel_date = st.date_input("Дата", value=dt_date.today(), key="admin_bookings_date")
-    all_bookings = utils.list_all_bookings_for_date(sel_date)  # :contentReference[oaicite:4]{index=4}
+    all_bookings = utils.list_all_bookings_for_date(sel_date)
     if not all_bookings:
         st.info("На выбранный день нет бронирований.")
         return
