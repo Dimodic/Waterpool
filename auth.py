@@ -1,3 +1,4 @@
+# auth.py
 import streamlit as st
 import utils
 
@@ -9,17 +10,18 @@ def login():
     if st.button("Войти"):
         role = utils.validate_user(username, password)
         if role:
+            # Загружаем из БД объект пользователя, чтобы взять флаг is_confirmed
             import utils as _utils
             with _utils.SessionLocal() as db:
                 user = db.query(_utils.User).filter_by(username=username).first()
-                st.session_state.update(
-                    logged_in=True,
-                    username=username,
-                    role=role,
-                )
-                if user and not user.is_confirmed and role != "admin":
-                    st.warning("Ваша регистрация ожидает подтверждения администрацией. Пожалуйста, принесите все необходимые бумаги в бассейн.")
-                    return
+
+            # Устанавливаем флаги в session_state
+            st.session_state.update(
+                logged_in=True,
+                username=username,
+                role=role,
+                is_confirmed=user.is_confirmed  # 0 или 1 из БД
+            )
             st.success("Успешный вход.")
             utils.safe_rerun()
         else:
@@ -48,23 +50,26 @@ def register():
     email        = st.text_input("Email", key="reg_email")
 
     if st.button("Зарегистрироваться"):
-        # Проверяем обязательные поля
         if not all([username, password, first_name, last_name, phone, gender, email]):
             st.error("Заполните все обязательные поля.")
             return
+
         success = utils.add_user(
             username, password,
             first_name, last_name, middle_name,
             phone, gender, email
         )
         if success:
+            # При успешной регистрации всё равно помечаем is_confirmed=0,
+            # но не блокируем сразу вход — пользователь зайдёт, увидит предупреждение на странице бронирования.
             role = utils.validate_user(username, password)
             st.session_state.update(
                 logged_in=True,
                 username=username,
                 role=role,
+                is_confirmed=False
             )
-            st.warning("Ваша регистрация прошла успешно, но ожидает подтверждения администрацией. Пожалуйста, принесите все необходимые бумаги в бассейн.")
+            st.success("Регистрация прошла успешно. Ждите подтверждения администрации.")
             utils.safe_rerun()
         else:
             st.error("Пользователь с таким логином или email уже существует.")
@@ -87,7 +92,7 @@ def register_org():
         if not all([username, password, org_name, contact_name, phone, email]):
             st.error("Заполните все обязательные поля.")
             return
-        # Регистрируем с ролью org и без подтверждения
+        # Регистрируем с ролью org и сразу подтверждаем
         success = utils.add_user(
             username, password,
             contact_name, "", "",
@@ -101,6 +106,7 @@ def register_org():
                 logged_in=True,
                 username=username,
                 role="org",
+                is_confirmed=True
             )
             st.success("Регистрация организации прошла успешно. Вы вошли в систему.")
             utils.safe_rerun()
