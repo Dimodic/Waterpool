@@ -4,6 +4,31 @@ import pandas as pd
 import utils
 from datetime import datetime, timedelta, date as dt_date
 
+# Кэширование списков слотов и бронирований
+@st.cache_data(ttl=300)
+def get_timeslots_admin():
+    return utils.list_timeslots()
+
+@st.cache_data(ttl=300)
+def get_closed_map(week_start_iso):
+    week_start = datetime.fromisoformat(week_start_iso).date()
+    week_dates = [week_start + timedelta(days=i) for i in range(7)]
+    closed_map = {}
+    for single_date in week_dates:
+        for item in utils.list_closed_slots(single_date):
+            closed_map[(item["date"], item["time"])] = item["id"]
+    return closed_map
+
+@st.cache_data(ttl=300)
+def get_booking_map(week_start_iso):
+    week_start = datetime.fromisoformat(week_start_iso).date()
+    booking_map = set()
+    for i in range(7):
+        single_date = week_start + timedelta(days=i)
+        for b in utils.list_all_bookings_for_date(single_date):
+            booking_map.add((b["date"], b["time"]))
+    return booking_map
+
 def admin_page():
     st.sidebar.title("Администрирование")
     section = st.sidebar.radio("Раздел", [
@@ -29,22 +54,20 @@ def admin_page():
 def manage_timeslots():
     st.subheader("Управление слотами (закрытые слоты)")
 
-    # Инициализируем начало недели (понедельник)
     if "week_start_admin" not in st.session_state:
         today = dt_date.today()
         st.session_state.week_start_admin = today - timedelta(days=today.weekday())
 
-    # Навигация между неделями и выбор конкретной даты
-    nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 3])
-    with nav_col1:
-        if st.button("<< Предыдущая неделя"):
+    nav1, nav2, nav3 = st.columns([1, 1, 3])
+    with nav1:
+        if st.button("<< Предыдущая неделя", key="admin_prev_week"):
             st.session_state.week_start_admin -= timedelta(days=7)
             utils.safe_rerun()
-    with nav_col2:
-        if st.button("Следующая неделя >>"):
+    with nav2:
+        if st.button("Следующая неделя >>", key="admin_next_week"):
             st.session_state.week_start_admin += timedelta(days=7)
             utils.safe_rerun()
-    with nav_col3:
+    with nav3:
         picked = st.date_input(
             label="Выберите любую дату недели",
             value=st.session_state.week_start_admin,
@@ -54,33 +77,13 @@ def manage_timeslots():
             st.session_state.week_start_admin = picked - timedelta(days=picked.weekday())
             utils.safe_rerun()
 
-    # Вычисляем все даты текущей недели (понедельник – воскресенье)
-    week_dates = [
-        st.session_state.week_start_admin + timedelta(days=i) for i in range(7)
-    ]
-    # Формируем заголовки "дата + день недели"
-    day_labels = [
-        d.strftime("%d.%m") + " " + ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][d.weekday()]
-        for d in week_dates
-    ]
+    week_start_iso = st.session_state.week_start_admin.isoformat()
+    week_dates = [st.session_state.week_start_admin + timedelta(days=i) for i in range(7)]
+    day_labels = [d.strftime("%d.%m") + " " + ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][d.weekday()] for d in week_dates]
 
-    # Базовые временные интервалы
-    timeslots = utils.list_timeslots()
-
-    # Собираем закрытые слоты за неделю
-    closed_map = {}  # {(дата, время): id_closed_slot}
-    for single_date in week_dates:
-        closed_list = utils.list_closed_slots(single_date)
-        for item in closed_list:
-            key = (item["date"], item["time"])
-            closed_map[key] = item["id"]
-
-    # Собираем бронирования за неделю
-    booking_map = set()  # {(дата, время) для слотов, где есть хотя бы одна бронь}
-    for single_date in week_dates:
-        all_b = utils.list_all_bookings_for_date(single_date)
-        for b in all_b:
-            booking_map.add((b["date"], b["time"]))
+    timeslots = get_timeslots_admin()
+    closed_map = get_closed_map(week_start_iso)
+    booking_map = get_booking_map(week_start_iso)
 
     # Строим таблицу: первая строка — заголовки
     header_cols = st.columns([1] + [1]*7)
@@ -88,27 +91,22 @@ def manage_timeslots():
     for idx, label in enumerate(day_labels):
         header_cols[idx+1].write(label)
 
-    # Для каждого времени выводим строки с ячейками
     for t in timeslots:
         row_cols = st.columns([1] + [1]*7)
         row_cols[0].write(t)
         for idx, single_date in enumerate(week_dates):
             cell_key = f"cell_admin_{single_date}_{t}"
             if (single_date, t) in closed_map:
-                # Если слот закрыт — показ кнопки удаления
                 if row_cols[idx+1].button("❌", key=cell_key):
                     utils.remove_closed_slot(closed_map[(single_date, t)])
                     st.success(f"Слот {t} на {single_date} снова доступен")
                     utils.safe_rerun()
             elif (single_date, t) in booking_map:
-                # Если есть бронь — показываем иконку
                 row_cols[idx+1].write("📌")
             else:
-                # Иначе — пустая ячейка
                 row_cols[idx+1].write("")
 
     st.markdown("---")
-    # Форма для добавления нового закрытого слота
     st.markdown("#### Добавить новый закрытый слот")
     add_date = st.date_input(
         label="Дата слота",
@@ -127,11 +125,13 @@ def manage_timeslots():
         if ok:
             st.success(f"Слот {add_time} на {add_date} закрыт")
             if st.session_state.week_start_admin <= add_date < st.session_state.week_start_admin + timedelta(days=7):
+                # Сбросим кеширование для этой недели
+                get_closed_map.clear()
                 utils.safe_rerun()
         else:
             st.warning("Такой закрытый слот уже существует.")
 
-# ------------------ Управление тренерами и прочее (без изменений) -------------
+# Остальные разделы без изменений...
 def manage_trainers():
     st.subheader("Управление тренерами")
     trainers = utils.list_trainers()
@@ -154,7 +154,6 @@ def manage_trainers():
 
 def manage_trainer_schedule():
     st.subheader("Управление расписанием тренеров")
-
     st.session_state.setdefault("show_add_trainer_schedule", False)
     schedules = utils.list_trainer_schedule()
     day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
@@ -193,7 +192,7 @@ def manage_trainer_schedule():
         else:
             trainer = st.selectbox("Тренер", trainers, key="new_sch_trainer")
             day = st.selectbox("День недели", day_names, key="new_sch_day")
-            timeslots = utils.list_timeslots()
+            timeslots = get_timeslots_admin()
             col_time1, col_time2 = st.columns(2)
             with col_time1:
                 start_time = st.selectbox("Время начала", timeslots, key="new_sch_time_start")
@@ -230,8 +229,7 @@ def manage_users():
     df = pd.DataFrame(users)
     search = st.text_input("Поиск", key="user_search")
     if search:
-        mask = df.apply(lambda row: row.astype(str)
-                        .str.contains(search, case=False).any(), axis=1)
+        mask = df.apply(lambda row: row.astype(str).str.contains(search, case=False).any(), axis=1)
         df = df[mask]
     if df.empty:
         st.info("Нет пользователей по вашему запросу.")
@@ -263,13 +261,16 @@ def manage_users():
                 st.write("Подтвержден" if row["is_confirmed"] else "Ожидает подтверждения")
             with cols[7]:
                 if not row["is_confirmed"]:
-                    if st.button("\u2705", key=f"confirm_{row['id']}"):
+                    if st.button("✅", key=f"confirm_{row['id']}"):
                         utils.confirm_user(row["id"])
                         st.success(f"Пользователь {row['username']} подтвержден")
+                        # Сбрасываем кеширование для админского календаря
+                        get_closed_map.clear()
+                        get_booking_map.clear()
                         utils.safe_rerun()
             with cols[8]:
                 if row["username"] != "admin":
-                    if st.button("\U0001F5D1", key=f"delete_{row['id']}"):
+                    if st.button("🗑️", key=f"delete_{row['id']}"):
                         utils.remove_user(row["id"])
                         st.success(f"Пользователь {row['username']} удален")
                         utils.safe_rerun()

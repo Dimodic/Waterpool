@@ -1,7 +1,41 @@
 # booking.py
 import streamlit as st
 import utils
-from datetime import timedelta, date as dt_date
+from datetime import datetime, timedelta, date as dt_date
+import pandas as pd
+
+# Кэширование тяжёлых запросов
+@st.cache_data(ttl=300)
+def get_timeslots():
+    return utils.list_timeslots()
+
+@st.cache_data(ttl=300)
+def get_busy_map(week_start_iso):
+    """
+    Возвращает DataFrame со статусом "Свободно"/"Занято" для каждой пары (дата, время)
+    week_start_iso: строка вида "YYYY-MM-DD" (понедельник)
+    """
+    week_start = datetime.fromisoformat(week_start_iso).date()
+    week_dates = [week_start + timedelta(days=i) for i in range(7)]
+    timeslots = get_timeslots()
+
+    data = {}
+    for t in timeslots:
+        row = []
+        for single_date in week_dates:
+            # Проверка, закрыт ли слот
+            if utils.is_slot_closed(single_date, t):
+                status = "Занято"
+            else:
+                busy_lanes, _ = utils.lane_trainer_status(single_date, t)
+                status = "Свободно" if len(busy_lanes) < 6 else "Занято"
+            row.append(status)
+        data[t] = row
+
+    day_labels = [d.strftime("%d.%m") + " " + ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][d.weekday()] for d in week_dates]
+    df = pd.DataFrame(data, index=day_labels).T
+    df.index.name = "Время"
+    return df
 
 def booking_page():
     st.subheader("Бронирование дорожек и тренеров")
@@ -10,21 +44,22 @@ def booking_page():
         booking_page_org()
         return
 
-    # --- ШАГ 1: Недельный обзор занятости дорожек ---
+    # Инициализируем начало недели (понедельник)
     if "week_start_user" not in st.session_state:
         today = dt_date.today()
         st.session_state.week_start_user = today - timedelta(days=today.weekday())
 
-    nav1, nav2, nav3 = st.columns([1, 1, 3])
-    with nav1:
+    # Навигация по неделям
+    col1, col2, col3 = st.columns([1, 1, 3])
+    with col1:
         if st.button("<< Предыдущая неделя", key="prev_week_user"):
             st.session_state.week_start_user -= timedelta(days=7)
             utils.safe_rerun()
-    with nav2:
+    with col2:
         if st.button("Следующая неделя >>", key="next_week_user"):
             st.session_state.week_start_user += timedelta(days=7)
             utils.safe_rerun()
-    with nav3:
+    with col3:
         picked = st.date_input(
             label="Выберите любую дату недели",
             value=st.session_state.week_start_user,
@@ -34,35 +69,22 @@ def booking_page():
             st.session_state.week_start_user = picked - timedelta(days=picked.weekday())
             utils.safe_rerun()
 
-    week_dates = [
-        st.session_state.week_start_user + timedelta(days=i) for i in range(7)
-    ]
-    day_labels = [
-        d.strftime("%d.%m") + " " + ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][d.weekday()]
-        for d in week_dates
-    ]
+    # Получаем и выводим DataFrame со статусами (кэшируется)
+    week_start_iso = st.session_state.week_start_user.isoformat()
+    df = get_busy_map(week_start_iso)
 
-    timeslots = utils.list_timeslots()
+    # Функция для покраски ячеек
+    def color_cells(val):
+        if val == "Свободно":
+            return "background-color: #90ee90"  # светло-зелёный
+        else:
+            return "background-color: #ff7f7f"  # светло-красный
 
-    # Собираем информацию о занятости (True/False) для каждой ячейки
-    data = {}
-    for t in timeslots:
-        row = []
-        for single_date in week_dates:
-            busy_lanes, _ = utils.lane_trainer_status(single_date, t)
-            # Если меньше 6 занятых — есть свободное место
-            status = "Свободно" if len(busy_lanes) < 6 and not utils.is_slot_closed(single_date, t) else "Занято"
-            row.append(status)
-        data[t] = row
-
-    # Создаём DataFrame
-    import pandas as pd
-    df = pd.DataFrame(data, index=day_labels).T
-    df.index.name = "Время"
-    st.dataframe(df, use_container_width=True)
+    styled = df.style.applymap(color_cells)
+    st.dataframe(styled, use_container_width=True)
 
     st.markdown("---")
-    # --- ШАГ 2: Мои текущие бронирования ---
+    # --- Мои бронирования ---
     st.markdown("### Мои бронирования")
     my_bookings = utils.list_user_bookings(st.session_state["username"])
     if my_bookings:
@@ -89,12 +111,12 @@ def booking_page():
     else:
         st.info("У вас нет бронирований.")
 
-    # --- Форма редактирования ---
+    # Форма редактирования (не меняется)
     if st.session_state.get("show_edit_form"):
         b = st.session_state["edit_booking_data"]
         st.markdown("#### Изменить бронирование")
         new_date = st.date_input("Дата", value=b["date"], key="edit_date")
-        slots = utils.list_timeslots()
+        slots = get_timeslots()
         new_time = st.selectbox("Время", slots, index=slots.index(b["time"]))
         busy_lanes, busy_trainers = utils.lane_trainer_status(new_date, new_time)
         free_lanes = [l for l in range(1, 7) if l not in busy_lanes or l == b["lane"]]
@@ -124,7 +146,7 @@ def booking_page():
             utils.safe_rerun()
 
     st.markdown("---")
-    # --- ШАГ 3: Новое бронирование (только для подтверждённых) ---
+    # --- Новое бронирование (только для подтверждённых) ---
     if not st.session_state.get("is_confirmed", False):
         st.warning("Ваша регистрация ожидает подтверждения администрацией. Пожалуйста, принесите все необходимые бумаги в бассейн.")
         return
@@ -134,13 +156,12 @@ def booking_page():
         st.error("Нельзя бронировать прошедшие даты!")
         return
 
-    slots = utils.list_timeslots()
+    slots = get_timeslots()
     if not slots:
         st.warning("Нет доступных временных интервалов. Обратитесь к администратору.")
         return
 
     sel_time = st.selectbox("Время", slots, key="new_booking_time")
-
     if utils.is_slot_closed(sel_date, sel_time):
         st.error("Этот слот закрыт для бронирования администратором.")
         return
@@ -152,7 +173,6 @@ def booking_page():
         return
 
     lane = st.selectbox("Дорожка", free_lanes, key="new_booking_lane")
-
     scheduled = utils.get_scheduled_trainers(sel_date, sel_time)
     free_trainers = [t for t in scheduled if t not in busy_trainers]
     trainer_options = ["Без тренера"] + free_trainers
