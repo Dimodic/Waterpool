@@ -46,11 +46,11 @@ def get_slot_status(week_start_iso: str, username: str):
         for single_date in week_dates:
             key = (single_date, t)
             if key in user_set:
-                status = "mine"
+                status = "Ваша запись"
             elif key in closed_set or key in booking_map:
-                status = "busy"
+                status = "Недоступно"
             else:
-                status = "free"
+                status = "Доступно"
             row.append(status)
         data[t] = row
 
