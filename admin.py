@@ -1,4 +1,4 @@
-## admin.py
+# admin.py
 import streamlit as st
 import pandas as pd
 import utils
@@ -71,7 +71,7 @@ def manage_timeslots():
             get_closed_map.clear()
             get_booking_map.clear()
             utils.safe_rerun()
-    with nav_col3 := nav3:
+    with nav3:
         picked = st.date_input(
             label="Выберите любую дату недели",
             value=st.session_state.week_start_admin,
@@ -85,7 +85,10 @@ def manage_timeslots():
 
     week_start_iso = st.session_state.week_start_admin.isoformat()
     week_dates = [st.session_state.week_start_admin + timedelta(days=i) for i in range(7)]
-    day_labels = [d.strftime("%d.%m") + " " + ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][d.weekday()] for d in week_dates]
+    day_labels = [
+        d.strftime("%d.%m") + " " + ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][d.weekday()]
+        for d in week_dates
+    ]
 
     timeslots = get_timeslots_admin()
     closed_map = get_closed_map(week_start_iso)
@@ -137,6 +140,7 @@ def manage_timeslots():
         else:
             st.warning("Такой закрытый слот уже существует.")
 
+# ------------------ Управление тренерами и прочее ----------------------------
 def manage_trainers():
     st.subheader("Управление тренерами")
     trainers = utils.list_trainers()
@@ -268,10 +272,9 @@ def manage_users():
                 if not row["is_confirmed"]:
                     if st.button("✅", key=f"confirm_{row['id']}"):
                         utils.confirm_user(row["id"])
-                        st.success(f"Пользователь {row['username']} подтвержден")
-                        # Сбрасываем кеширование для админского календаря
                         get_closed_map.clear()
                         get_booking_map.clear()
+                        st.success(f"Пользователь {row['username']} подтвержден")
                         utils.safe_rerun()
             with cols[8]:
                 if row["username"] != "admin":
