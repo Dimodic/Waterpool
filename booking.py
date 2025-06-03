@@ -1,18 +1,16 @@
 # booking.py
 import streamlit as st
 import utils
-from datetime import datetime, timedelta, date as dt_date
+from datetime import timedelta, date as dt_date
 
 def booking_page():
     st.subheader("Бронирование дорожек и тренеров")
 
-    # Если роль — юридическое лицо, перекладываем на свой сценарий
     if st.session_state.get("role") == "org":
         booking_page_org()
         return
 
-    # --- ШАГ 1: Сначала показываем «Недельный календарь» для наглядности ---
-    # (При этом и неподтверждённый пользователь увидит календарь, но «новая бронь» будет недоступна.)
+    # --- ШАГ 1: Недельный обзор занятости дорожек ---
     if "week_start_user" not in st.session_state:
         today = dt_date.today()
         st.session_state.week_start_user = today - timedelta(days=today.weekday())
@@ -44,85 +42,54 @@ def booking_page():
         for d in week_dates
     ]
 
-    timeslots = utils.list_timeslots()  # базовые интервалы
+    timeslots = utils.list_timeslots()
 
-    # Собираем занятые дорожки (бронирования) за каждую дату/время
-    busy_map = {}
-    for single_date in week_dates:
-        for t in timeslots:
-            busy_lanes, _ = utils.lane_trainer_status(single_date, t)
-            busy_map[(single_date, t)] = busy_lanes
-
-    # Строим стилизованную HTML-таблицу «дорожек»
-    table_html = """
-    <style>
-        table.week-calendar { border-collapse: collapse; width: 100%; }
-        table.week-calendar th, table.week-calendar td {
-            border: 1px solid #999;
-            padding: 4px;
-            vertical-align: middle;
-            text-align: center;
-        }
-        th.day-header { background-color: #f0f0f0; }
-        td.time-cell { background-color: #fafafa; font-weight: bold; }
-        .lane { display: inline-block; width: 14px; height: 14px; margin: 1px; border: 1px solid #555; border-radius: 3px; }
-        .free { background-color: #90ee90; }
-        .busy { background-color: #ff7f7f; }
-    </style>
-    <table class="week-calendar">
-      <tr>
-        <th class="day-header">Время</th>"""
-    for label in day_labels:
-        table_html += f"<th class='day-header'>{label}</th>"
-    table_html += "</tr>"
-
+    # Собираем информацию о занятости (True/False) для каждой ячейки
+    data = {}
     for t in timeslots:
-        table_html += f"<tr><td class='time-cell'>{t}</td>"
+        row = []
         for single_date in week_dates:
-            lanes_busy = busy_map.get((single_date, t), [])
-            cell_content = ""
-            # Рисуем 6 «квадратиков» — дорожек 1..6
-            for lane_no in range(1, 7):
-                if lane_no in lanes_busy:
-                    cell_content += "<span class='lane busy' title='Дорожка {} занята'></span>".format(lane_no)
-                else:
-                    cell_content += "<span class='lane free' title='Дорожка {} свободна'></span>".format(lane_no)
-            table_html += f"<td>{cell_content}</td>"
-        table_html += "</tr>"
+            busy_lanes, _ = utils.lane_trainer_status(single_date, t)
+            # Если меньше 6 занятых — есть свободное место
+            status = "Свободно" if len(busy_lanes) < 6 and not utils.is_slot_closed(single_date, t) else "Занято"
+            row.append(status)
+        data[t] = row
 
-    table_html += "</table>"
-    st.markdown(table_html, unsafe_allow_html=True)
+    # Создаём DataFrame
+    import pandas as pd
+    df = pd.DataFrame(data, index=day_labels).T
+    df.index.name = "Время"
+    st.dataframe(df, use_container_width=True)
 
     st.markdown("---")
-    # --- ШАГ 2: Блок «Мои бронирования» (оставляем без изменений) ---
+    # --- ШАГ 2: Мои текущие бронирования ---
     st.markdown("### Мои бронирования")
     my_bookings = utils.list_user_bookings(st.session_state["username"])
     if my_bookings:
-        import pandas as pd
-        df = pd.DataFrame(my_bookings)
-        for _, row in df.iterrows():
-            col1, col2, col3, col4, col5 = st.columns([2,2,2,2,2])
-            with col1:
+        dfb = pd.DataFrame(my_bookings)
+        for _, row in dfb.iterrows():
+            c1, c2, c3, c4, c5 = st.columns([2,2,2,2,2])
+            with c1:
                 st.write(row["date"])
-            with col2:
+            with c2:
                 st.write(row["time"])
-            with col3:
+            with c3:
                 st.write(row["lane"])
-            with col4:
+            with c4:
                 st.write(row["trainer"] if row["trainer"] else "Без тренера")
-            with col5:
-                if st.button(f"Удалить", key=f"del_{row['id']}"):
+            with c5:
+                if st.button("Удалить", key=f"del_{row['id']}"):
                     utils.remove_booking(row["id"])
                     st.success("Бронирование удалено")
                     utils.safe_rerun()
-                if st.button(f"Изменить", key=f"edit_{row['id']}"):
+                if st.button("Изменить", key=f"edit_{row['id']}"):
                     st.session_state["edit_booking_id"] = row["id"]
                     st.session_state["edit_booking_data"] = row
                     st.session_state["show_edit_form"] = True
     else:
         st.info("У вас нет бронирований.")
 
-    # --- Форма редактирования (если нужно) — без изменений ---
+    # --- Форма редактирования ---
     if st.session_state.get("show_edit_form"):
         b = st.session_state["edit_booking_data"]
         st.markdown("#### Изменить бронирование")
@@ -157,12 +124,11 @@ def booking_page():
             utils.safe_rerun()
 
     st.markdown("---")
-    # --- ШАГ 3: Блок «Новое бронирование» — показываем только для подтверждённых ---
+    # --- ШАГ 3: Новое бронирование (только для подтверждённых) ---
     if not st.session_state.get("is_confirmed", False):
         st.warning("Ваша регистрация ожидает подтверждения администрацией. Пожалуйста, принесите все необходимые бумаги в бассейн.")
         return
 
-    # Если подтвердили — показываем сам форму для новой брони
     sel_date = st.date_input("Дата бронирования", value=dt_date.today(), key="new_booking_date")
     if sel_date < dt_date.today():
         st.error("Нельзя бронировать прошедшие даты!")
@@ -175,11 +141,11 @@ def booking_page():
 
     sel_time = st.selectbox("Время", slots, key="new_booking_time")
 
-    busy_lanes, busy_trainers = utils.lane_trainer_status(sel_date, sel_time)
     if utils.is_slot_closed(sel_date, sel_time):
         st.error("Этот слот закрыт для бронирования администратором.")
         return
 
+    busy_lanes, busy_trainers = utils.lane_trainer_status(sel_date, sel_time)
     free_lanes = [l for l in range(1, 7) if l not in busy_lanes]
     if not free_lanes:
         st.warning("На это время нет свободных дорожек.")

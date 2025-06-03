@@ -10,17 +10,16 @@ def login():
     if st.button("Войти"):
         role = utils.validate_user(username, password)
         if role:
-            # Загружаем из БД объект пользователя, чтобы взять флаг is_confirmed
-            import utils as _utils
-            with _utils.SessionLocal() as db:
-                user = db.query(_utils.User).filter_by(username=username).first()
+            # Получаем флаг is_confirmed из БД
+            from utils import SessionLocal, User
+            with SessionLocal() as db:
+                user = db.query(User).filter_by(username=username).first()
 
-            # Устанавливаем флаги в session_state
             st.session_state.update(
                 logged_in=True,
                 username=username,
                 role=role,
-                is_confirmed=user.is_confirmed  # 0 или 1 из БД
+                is_confirmed=user.is_confirmed  # 0 или 1
             )
             st.success("Успешный вход.")
             utils.safe_rerun()
@@ -60,8 +59,6 @@ def register():
             phone, gender, email
         )
         if success:
-            # При успешной регистрации всё равно помечаем is_confirmed=0,
-            # но не блокируем сразу вход — пользователь зайдёт, увидит предупреждение на странице бронирования.
             role = utils.validate_user(username, password)
             st.session_state.update(
                 logged_in=True,
@@ -92,7 +89,6 @@ def register_org():
         if not all([username, password, org_name, contact_name, phone, email]):
             st.error("Заполните все обязательные поля.")
             return
-        # Регистрируем с ролью org и сразу подтверждаем
         success = utils.add_user(
             username, password,
             contact_name, "", "",
