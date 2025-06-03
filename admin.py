@@ -1,4 +1,4 @@
-# admin.py
+## admin.py
 import streamlit as st
 import pandas as pd
 import utils
@@ -62,12 +62,16 @@ def manage_timeslots():
     with nav1:
         if st.button("<< Предыдущая неделя", key="admin_prev_week"):
             st.session_state.week_start_admin -= timedelta(days=7)
+            get_closed_map.clear()
+            get_booking_map.clear()
             utils.safe_rerun()
     with nav2:
         if st.button("Следующая неделя >>", key="admin_next_week"):
             st.session_state.week_start_admin += timedelta(days=7)
+            get_closed_map.clear()
+            get_booking_map.clear()
             utils.safe_rerun()
-    with nav3:
+    with nav_col3 := nav3:
         picked = st.date_input(
             label="Выберите любую дату недели",
             value=st.session_state.week_start_admin,
@@ -75,6 +79,8 @@ def manage_timeslots():
         )
         if picked != st.session_state.week_start_admin:
             st.session_state.week_start_admin = picked - timedelta(days=picked.weekday())
+            get_closed_map.clear()
+            get_booking_map.clear()
             utils.safe_rerun()
 
     week_start_iso = st.session_state.week_start_admin.isoformat()
@@ -99,6 +105,8 @@ def manage_timeslots():
             if (single_date, t) in closed_map:
                 if row_cols[idx+1].button("❌", key=cell_key):
                     utils.remove_closed_slot(closed_map[(single_date, t)])
+                    get_closed_map.clear()
+                    get_booking_map.clear()
                     st.success(f"Слот {t} на {single_date} снова доступен")
                     utils.safe_rerun()
             elif (single_date, t) in booking_map:
@@ -123,15 +131,12 @@ def manage_timeslots():
     if st.button("Добавить закрытый слот"):
         ok = utils.add_closed_slot(add_date, add_time, add_comment)
         if ok:
+            get_closed_map.clear()
             st.success(f"Слот {add_time} на {add_date} закрыт")
-            if st.session_state.week_start_admin <= add_date < st.session_state.week_start_admin + timedelta(days=7):
-                # Сбросим кеширование для этой недели
-                get_closed_map.clear()
-                utils.safe_rerun()
+            utils.safe_rerun()
         else:
             st.warning("Такой закрытый слот уже существует.")
 
-# Остальные разделы без изменений...
 def manage_trainers():
     st.subheader("Управление тренерами")
     trainers = utils.list_trainers()
