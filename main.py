@@ -1,3 +1,4 @@
+# main.py
 import streamlit as st
 import logging
 from db import init_db
@@ -22,14 +23,14 @@ init_db()
 
 # Состояние сессии по умолчанию
 for key, val in [
-    ("logged_in", False), 
-    ("username", ""), 
+    ("logged_in", False),
+    ("username", ""),
     ("role", ""),
     ("auth_page", "login")  # новое состояние: login или register
 ]:
     st.session_state.setdefault(key, val)
 
-st.title("Система бронирования дорожек в бассейне")
+# В этом месте заголовок удалён, как и просил пользователь
 
 if not st.session_state["logged_in"]:
     if st.session_state["auth_page"] == "login":
