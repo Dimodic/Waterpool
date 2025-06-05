@@ -4,61 +4,12 @@ import utils
 from datetime import datetime, timedelta, date as dt_date
 import pandas as pd
 
-# Кэширование тяжёлых запросов
 @st.cache_data(ttl=300)
 def get_timeslots():
     return utils.list_timeslots()
 
-@st.cache_data(ttl=300)
-def get_slot_status(week_start_iso: str, username: str):
-    """
-    Возвращает DataFrame со статусом:
-      - "mine" — если пользователь имеет бронь в этот слот
-      - "busy" — если слот закрыт или занят кем-то другим
-      - "free" — если слот доступен
-    """
-    week_start = datetime.fromisoformat(week_start_iso).date()
-    week_dates = [week_start + timedelta(days=i) for i in range(7)]
-    timeslots = get_timeslots()
-
-    # Собираем все бронирования текущего пользователя
-    user_bookings = utils.list_user_bookings(username)
-    user_set = {(b["date"], b["time"]) for b in user_bookings}
-
-    # Собираем все бронирования любого пользователя по дате/времени
-    booking_map = set()
-    for single_date in week_dates:
-        all_b = utils.list_all_bookings_for_date(single_date)
-        for b in all_b:
-            booking_map.add((b["date"], b["time"]))
-
-    # Собираем закрытые слоты
-    closed_set = set()
-    for single_date in week_dates:
-        for item in utils.list_closed_slots(single_date):
-            closed_set.add((item["date"], item["time"]))
-
-    data = {}
-    for t in timeslots:
-        row = []
-        for single_date in week_dates:
-            key = (single_date, t)
-            if key in user_set:
-                status = "mine"
-            elif key in closed_set or key in booking_map:
-                status = "busy"
-            else:
-                status = "free"
-            row.append(status)
-        data[t] = row
-
-    day_labels = [
-        d.strftime("%d.%m") + " " + ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][d.weekday()]
-        for d in week_dates
-    ]
-    df = pd.DataFrame(data, index=day_labels).T
-    df.index.name = "Время"
-    return df
+def get_week_dates(week_start):
+    return [week_start + timedelta(days=i) for i in range(7)]
 
 def booking_page():
     st.subheader("Бронирование дорожек и тренеров")
@@ -67,7 +18,7 @@ def booking_page():
         booking_page_org()
         return
 
-    # Обычная пользовательская страница (не менялась)
+    # --- Недельная таблица ---
     if "week_start_user" not in st.session_state:
         today = dt_date.today()
         st.session_state.week_start_user = today - timedelta(days=today.weekday())
@@ -76,12 +27,10 @@ def booking_page():
     with col1:
         if st.button("<< Предыдущая неделя", key="prev_week_user"):
             st.session_state.week_start_user -= timedelta(days=7)
-            get_slot_status.clear()
             utils.safe_rerun()
     with col2:
         if st.button("Следующая неделя >>", key="next_week_user"):
             st.session_state.week_start_user += timedelta(days=7)
-            get_slot_status.clear()
             utils.safe_rerun()
     with col3:
         picked = st.date_input(
@@ -91,27 +40,63 @@ def booking_page():
         )
         if picked != st.session_state.week_start_user:
             st.session_state.week_start_user = picked - timedelta(days=picked.weekday())
-            get_slot_status.clear()
             utils.safe_rerun()
 
-    week_start_iso = st.session_state.week_start_user.isoformat()
-    df = get_slot_status(week_start_iso, st.session_state["username"])
+    week_start = st.session_state.week_start_user
+    week_dates = get_week_dates(week_start)
+    timeslots = get_timeslots()
+    day_labels = [
+        d.strftime("%d.%m") + " " + ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][d.weekday()]
+        for d in week_dates
+    ]
 
-    # Функция для покраски ячеек по статусу
-    def color_cells(val):
-        if val == "mine":
-            return "background: linear-gradient(90deg, #0e63c1 60%, transparent 60%);"  # синий "половинкой"
-        elif val == "busy":
-            return "background: linear-gradient(90deg, #FF7F7F 60%, transparent 60%);"  # светло-красный
-        else:
-            return ""
+    # Собираем свои брони
+    my_bookings = utils.list_user_bookings(st.session_state["username"])
+    my_slots = set((b["date"], b["time"]) for b in my_bookings)
 
-    styled = df.style.applymap(color_cells)
-    st.dataframe(styled, use_container_width=True, height=390)
+    # Все другие брони
+    busy_slots = set()
+    for d in week_dates:
+        all_b = utils.list_all_bookings_for_date(d)
+        for b in all_b:
+            busy_slots.add((b["date"], b["time"]))
+
+    # Закрытые
+    closed_slots = set()
+    for d in week_dates:
+        for item in utils.list_closed_slots(d):
+            closed_slots.add((item["date"], item["time"]))
+
+    # Рисуем кастомную таблицу c цветом и подписью
+    import streamlit.components.v1 as components
+    cell_height = 32
+    html = "<style>.user-table td{height:%dpx;min-width:68px;text-align:center;font-size:12px;}</style>" % cell_height
+    html += "<table class='user-table' style='width:100%%; border-collapse:collapse;'><tr><th>Время</th>"
+    for label in day_labels:
+        html += f"<th>{label}</th>"
+    html += "</tr>"
+    for t in timeslots:
+        html += f"<tr><td>{t}</td>"
+        for d in week_dates:
+            key = (d, t)
+            if key in my_slots:
+                color = "#1569c7"
+                bar = f"<div style='width:70%;height:8px;margin:auto;background:{color};border-radius:2px;'></div><div style='font-size:11px;'>Ваша бронь</div>"
+            elif key in closed_slots:
+                color = "#b7b7b7"
+                bar = f"<div style='width:70%;height:8px;margin:auto;background:{color};opacity:0.7;border-radius:2px;'></div><div style='font-size:11px;'>Недоступно</div>"
+            elif key in busy_slots:
+                color = "#FF7F7F"
+                bar = f"<div style='width:70%;height:8px;margin:auto;background:{color};border-radius:2px;'></div><div style='font-size:11px;'>Занято</div>"
+            else:
+                bar = ""
+            html += f"<td style='padding:0;border:1px solid #e0e0e0;'>{bar}</td>"
+        html += "</tr>"
+    html += "</table>"
+    st.markdown(html, unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("### Мои бронирования")
-    my_bookings = utils.list_user_bookings(st.session_state["username"])
     if my_bookings:
         dfb = pd.DataFrame(my_bookings)
         for _, row in dfb.iterrows():
@@ -127,7 +112,6 @@ def booking_page():
             with c5:
                 if st.button("Удалить", key=f"del_{row['id']}"):
                     utils.remove_booking(row["id"])
-                    get_slot_status.clear()
                     st.success("Бронирование удалено")
                     utils.safe_rerun()
                 if st.button("Изменить", key=f"edit_{row['id']}"):
@@ -162,7 +146,6 @@ def booking_page():
                 trainer_val,
             )
             if ok:
-                get_slot_status.clear()
                 st.success("Бронирование обновлено")
                 st.session_state["show_edit_form"] = False
                 utils.safe_rerun()
@@ -217,7 +200,6 @@ def booking_page():
             trainer_val,
         )
         if ok:
-            get_slot_status.clear()
             st.success(f"Бронирование подтверждено: дорожка {lane}, {sel_time}, {trainer}.")
             utils.safe_rerun()
         else:
@@ -226,7 +208,6 @@ def booking_page():
 def booking_page_org():
     st.subheader("Бронирование для юридических лиц (групповое)")
 
-    # --- Недельная таблица (отображение только СВОИХ записей) ---
     if "week_start_org" not in st.session_state:
         today = dt_date.today()
         st.session_state.week_start_org = today - timedelta(days=today.weekday())
@@ -251,16 +232,15 @@ def booking_page_org():
             utils.safe_rerun()
 
     week_start = st.session_state.week_start_org
-    week_dates = [week_start + timedelta(days=i) for i in range(7)]
+    week_dates = get_week_dates(week_start)
     timeslots = get_timeslots()
     day_labels = [
         d.strftime("%d.%m") + " " + ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][d.weekday()]
         for d in week_dates
     ]
 
-    # Собираем свои брони (org_booking_groups)
+    # Свои групповые брони
     groups = utils.list_org_booking_groups(st.session_state["username"])
-    # Вытаскиваем все пары (date, time)
     my_slots = set()
     group_lookup = dict()
     for g in groups:
@@ -269,23 +249,20 @@ def booking_page_org():
             my_slots.add((g["date"], t))
             group_lookup[(g["date"], t)] = g
 
-    # Собираем все остальные брони (для показа занятости)
+    # Все брони вообще
     busy_slots = set()
     for d in week_dates:
         all_b = utils.list_all_bookings_for_date(d)
         for b in all_b:
             busy_slots.add((b["date"], b["time"]))
 
-    # Собираем закрытые
     closed_slots = set()
     for d in week_dates:
         for item in utils.list_closed_slots(d):
             closed_slots.add((item["date"], item["time"]))
 
-    # Рисуем свою кастомную таблицу с закрашенной полоской
-    import streamlit.components.v1 as components
-    cell_height = 24
-    html = "<style>.org-table td{height:%dpx;min-width:65px;text-align:center;}</style>" % cell_height
+    cell_height = 32
+    html = "<style>.org-table td{height:%dpx;min-width:68px;text-align:center;font-size:12px;}</style>" % cell_height
     html += "<table class='org-table' style='width:100%%; border-collapse:collapse;'><tr><th>Время</th>"
     for label in day_labels:
         html += f"<th>{label}</th>"
@@ -294,13 +271,15 @@ def booking_page_org():
         html += f"<tr><td>{t}</td>"
         for d in week_dates:
             key = (d, t)
-            color = ""
             if key in my_slots:
                 color = "#1569c7"
-                bar = f"<div style='width:70%%;height:7px;margin:auto;background:{color};border-radius:2px;'></div>"
-            elif key in closed_slots or key in busy_slots:
+                bar = f"<div style='width:70%;height:8px;margin:auto;background:{color};border-radius:2px;'></div><div style='font-size:11px;'>Ваша бронь</div>"
+            elif key in closed_slots:
                 color = "#b7b7b7"
-                bar = f"<div style='width:70%%;height:7px;margin:auto;background:{color};opacity:0.7;border-radius:2px;'></div>"
+                bar = f"<div style='width:70%;height:8px;margin:auto;background:{color};opacity:0.7;border-radius:2px;'></div><div style='font-size:11px;'>Недоступно</div>"
+            elif key in busy_slots:
+                color = "#FF7F7F"
+                bar = f"<div style='width:70%;height:8px;margin:auto;background:{color};border-radius:2px;'></div><div style='font-size:11px;'>Занято</div>"
             else:
                 bar = ""
             html += f"<td style='padding:0;border:1px solid #e0e0e0;'>{bar}</td>"
@@ -310,7 +289,6 @@ def booking_page_org():
 
     st.markdown("---")
     st.markdown("### Мои групповые бронирования")
-    # Таблица броней для организации
     if groups:
         for g in groups:
             c1, c2, c3, c4, c5 = st.columns([2,2,2,3,2])
@@ -333,7 +311,6 @@ def booking_page_org():
     else:
         st.info("У вашей организации нет активных бронирований.")
 
-    # Форма редактирования
     if st.session_state.get("show_org_edit_form"):
         g = st.session_state["org_edit_group_data"]
         st.markdown("#### Изменить групповое бронирование")
@@ -366,7 +343,6 @@ def booking_page_org():
             utils.safe_rerun()
 
     st.markdown("---")
-    # --- Новое групповое бронирование ---
     st.markdown("#### Новое групповое бронирование")
     sel_date = st.date_input("Дата", value=dt_date.today(), key="org_new_date")
     slots = get_timeslots()
