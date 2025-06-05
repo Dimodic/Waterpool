@@ -38,12 +38,23 @@ if not st.session_state["logged_in"]:
     else:
         register()
 else:
-    st.sidebar.write(f"👤 **{st.session_state['username']}** ({st.session_state['role']})")
-    if st.sidebar.button("Выход"):
-        user = st.session_state["username"]
-        st.session_state.update(logged_in=False, username="", role="", auth_page="login")
-        logger.info(f"User '{user}' logged out")
-        utils.safe_rerun()
+    # Кнопка выхода и имя пользователя в правом верхнем углу
+    col_user, col_logout = st.columns([9, 1])
+    with col_user:
+        st.markdown(
+            f"<div style='text-align: right; font-weight: bold;'>"
+            f"👤 {st.session_state['username']} ({st.session_state['role']})"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with col_logout:
+        if st.button("Выйти"):
+            user = st.session_state["username"]
+            st.session_state.update(logged_in=False, username="", role="", auth_page="login")
+            logger.info(f"User '{user}' logged out")
+            utils.safe_rerun()
+
+    st.markdown("---")
 
     if st.session_state["role"] != "admin":
         st.title("Система бронирования дорожек в бассейне")
