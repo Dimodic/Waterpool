@@ -29,6 +29,12 @@ for key, val in [
 ]:
     st.session_state.setdefault(key, val)
 
+def logout_action():
+    user = st.session_state["username"]
+    st.session_state.update(logged_in=False, username="", role="", auth_page="login")
+    logger.info(f"User '{user}' logged out")
+    utils.safe_rerun()
+
 if not st.session_state["logged_in"]:
     st.title("Система бронирования дорожек в бассейне")
     if st.session_state["auth_page"] == "login":
@@ -39,40 +45,49 @@ if not st.session_state["logged_in"]:
         register()
 else:
     if st.session_state["role"] == "admin":
-        # Оставляем старую боковую панель и кнопку выхода слева
         st.sidebar.write(f"👤 **{st.session_state['username']}** ({st.session_state['role']})")
         if st.sidebar.button("Выход"):
-            user = st.session_state["username"]
-            st.session_state.update(logged_in=False, username="", role="", auth_page="login")
-            logger.info(f"User '{user}' logged out")
-            utils.safe_rerun()
+            logout_action()
         admin_page()
     else:
-        # --- Пользовательская панель: без sidebar, кнопка выхода сверху справа
-        st.markdown(
-            """
-            <div style='position:fixed;top:1.5rem;right:2.5rem;z-index:1000;text-align:right;'>
-                <span style="margin-right:1rem;font-weight:bold;">
-                    👤 {username} ({role})
-                </span>
-                <form action="" method="post">
-                    <button type="submit" name="logout-btn" style="
-                        background:#f33;color:white;border:none;padding:0.4rem 1.2rem;
-                        border-radius:7px;cursor:pointer;font-weight:bold;">
-                        Выйти
-                    </button>
-                </form>
-            </div>
-            """.format(username=st.session_state['username'], role="Организация" if st.session_state['role']=="org" else "Пользователь"),
-            unsafe_allow_html=True
-        )
+        # --- Кнопка выхода справа вверху (только для user/org) ---
+        st.markdown("""
+        <style>
+        .logout-btn-wrap {
+            position: fixed;
+            top: 1.2rem;
+            right: 2.2rem;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+        }
+        .logout-btn-profile {
+            font-weight: bold;
+            margin-right: 1.2rem;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        col_logout = st.columns([12, 1])
+        with col_logout[1]:
+            st.empty()  # чтобы не было кнопки в потоке обычного вывода
 
-        # Реализация выхода через скрытый html-кликер
-        if 'logout-btn' in st.session_state:
-            user = st.session_state["username"]
-            st.session_state.update(logged_in=False, username="", role="", auth_page="login")
-            logger.info(f"User '{user}' logged out")
-            utils.safe_rerun()
+        # Теперь реальный лайфхак: размещаем через place!
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        logout_btn_placeholder = st.empty()
+        with logout_btn_placeholder.container():
+            st.markdown(
+                f"""
+                <div class="logout-btn-wrap">
+                    <span class="logout-btn-profile">
+                        👤 {st.session_state['username']} ({'Организация' if st.session_state['role']=='org' else 'Пользователь'})
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            btn = st.button("Выйти", key="logout_top_btn", help="Выйти из профиля", use_container_width=False)
 
-        st.write("")  # маленький отступ для красоты
+        if btn:
+            logout_action()
+
         booking_page()
