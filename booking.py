@@ -437,3 +437,4 @@ def booking_page_org():
                     utils.safe_rerun()
                 else:
                     st.error("Не удалось создать бронирование (возможно, время/дорожка уже заняты).")
+
