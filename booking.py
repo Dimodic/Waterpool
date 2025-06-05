@@ -8,9 +8,6 @@ import pandas as pd
 def get_timeslots():
     return utils.list_timeslots()
 
-def get_week_dates(week_start):
-    return [week_start + timedelta(days=i) for i in range(7)]
-
 def booking_page():
     st.subheader("Бронирование дорожек и тренеров")
 
@@ -18,39 +15,34 @@ def booking_page():
         booking_page_org()
         return
 
-    # --- Недельная таблица + Мои бронирования — в двух колонках ---
     cols = st.columns([2.7, 2])
+    # ----------- Левая колонка: недельная таблица -----------
     with cols[0]:
-        # Таблица бронирования (оставляем весь html-код таблицы как раньше)
-        # ... (код недельной таблицы из вашего предыдущего варианта)
-        # Ниже — просто скопируйте из вашего предыдущего кода формирование html для недельной таблицы
-        # ...
-        week_start = st.session_state.get("week_start_user")
-        if week_start is None:
+        # --- Недельная таблица и навигация ---
+        if "week_start_user" not in st.session_state:
             today = dt_date.today()
-            week_start = today - timedelta(days=today.weekday())
-            st.session_state["week_start_user"] = week_start
+            st.session_state.week_start_user = today - timedelta(days=today.weekday())
 
         col1, col2, col3 = st.columns([1, 1, 3])
         with col1:
             if st.button("<< Предыдущая неделя", key="prev_week_user"):
-                st.session_state["week_start_user"] -= timedelta(days=7)
+                st.session_state.week_start_user -= timedelta(days=7)
                 utils.safe_rerun()
         with col2:
             if st.button("Следующая неделя >>", key="next_week_user"):
-                st.session_state["week_start_user"] += timedelta(days=7)
+                st.session_state.week_start_user += timedelta(days=7)
                 utils.safe_rerun()
         with col3:
             picked = st.date_input(
                 label="Выберите любую дату недели",
-                value=st.session_state["week_start_user"],
+                value=st.session_state.week_start_user,
                 key="pick_date_for_week_user"
             )
-            if picked != st.session_state["week_start_user"]:
-                st.session_state["week_start_user"] = picked - timedelta(days=picked.weekday())
+            if picked != st.session_state.week_start_user:
+                st.session_state.week_start_user = picked - timedelta(days=picked.weekday())
                 utils.safe_rerun()
 
-        week_start = st.session_state["week_start_user"]
+        week_start = st.session_state.week_start_user
         week_dates = [week_start + timedelta(days=i) for i in range(7)]
         timeslots = get_timeslots()
         day_labels = [
@@ -94,6 +86,7 @@ def booking_page():
         html += "</table>"
         st.markdown(html, unsafe_allow_html=True)
 
+    # ----------- Правая колонка: список броней и форма -----------
     with cols[1]:
         st.markdown("### Мои бронирования")
         my_bookings = utils.list_user_bookings(st.session_state["username"])
@@ -210,10 +203,8 @@ def booking_page_org():
     st.subheader("Бронирование для юридических лиц (групповое)")
 
     cols = st.columns([2.7, 2])
+    # ----------- Левая колонка: недельная таблица -----------
     with cols[0]:
-        # -- тут весь ваш код недельной таблицы как раньше (html-таблица с расписанием) --
-        # ... (весь предыдущий код построения таблицы)
-
         if "week_start_org" not in st.session_state:
             today = dt_date.today()
             st.session_state.week_start_org = today - timedelta(days=today.weekday())
@@ -230,21 +221,20 @@ def booking_page_org():
         with col3:
             picked = st.date_input(
                 label="Выберите любую дату недели",
-                value=st.session_state["week_start_org"],
+                value=st.session_state.week_start_org,
                 key="pick_date_for_week_org"
             )
-            if picked != st.session_state["week_start_org"]:
-                st.session_state["week_start_org"] = picked - timedelta(days=picked.weekday())
+            if picked != st.session_state.week_start_org:
+                st.session_state.week_start_org = picked - timedelta(days=picked.weekday())
                 utils.safe_rerun()
 
-        week_start = st.session_state["week_start_org"]
+        week_start = st.session_state.week_start_org
         week_dates = [week_start + timedelta(days=i) for i in range(7)]
         timeslots = get_timeslots()
         day_labels = [
             d.strftime("%d.%m") + " " + ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][d.weekday()]
             for d in week_dates
         ]
-
         groups = utils.list_org_booking_groups(st.session_state["username"])
         my_slots = set()
         group_lookup = dict()
@@ -253,7 +243,6 @@ def booking_page_org():
             for t in times:
                 my_slots.add((g["date"], t))
                 group_lookup[(g["date"], t)] = g
-
         busy_slots = set()
         for d in week_dates:
             all_b = utils.list_all_bookings_for_date(d)
@@ -289,6 +278,7 @@ def booking_page_org():
         html += "</table>"
         st.markdown(html, unsafe_allow_html=True)
 
+    # ----------- Правая колонка: список групповых броней и форма -----------
     with cols[1]:
         st.markdown("### Мои групповые бронирования")
         groups = utils.list_org_booking_groups(st.session_state["username"])
@@ -314,67 +304,68 @@ def booking_page_org():
         else:
             st.info("У вашей организации нет активных бронирований.")
 
-    if st.session_state.get("show_org_edit_form"):
-        g = st.session_state["org_edit_group_data"]
-        st.markdown("#### Изменить групповое бронирование")
-        new_date = st.date_input("Дата", value=g["date"], key="org_edit_date")
+        # Форма редактирования
+        if st.session_state.get("show_org_edit_form"):
+            g = st.session_state["org_edit_group_data"]
+            st.markdown("#### Изменить групповое бронирование")
+            new_date = st.date_input("Дата", value=g["date"], key="org_edit_date")
+            slots = get_timeslots()
+            group_times = g["times"].split(",") if g["times"] else [g["times"]]
+            start_time = st.selectbox("Время начала", slots, index=slots.index(group_times[0]))
+            end_time = st.selectbox("Время конца", slots, index=slots.index(group_times[-1]))
+            available_lanes = [1,2,3,4,5,6]
+            default_lanes = [int(l) for l in g["lanes"].split(",")]
+            sel_lanes = st.multiselect("Дорожки", available_lanes, default=default_lanes)
+            if st.button("Сохранить изменения", key="org_save_edit"):
+                start_idx = slots.index(start_time)
+                end_idx = slots.index(end_time)
+                if start_idx > end_idx:
+                    st.error("Время начала не может быть позже конца!")
+                    return
+                time_range = slots[start_idx:end_idx+1]
+                ok = utils.update_org_booking_group(
+                    g["id"], new_date, start_time, sel_lanes
+                )
+                if ok:
+                    st.success("Групповое бронирование изменено")
+                    st.session_state["show_org_edit_form"] = False
+                    utils.safe_rerun()
+                else:
+                    st.error("Ошибка при обновлении")
+            if st.button("Отмена", key="org_cancel_edit"):
+                st.session_state["show_org_edit_form"] = False
+                utils.safe_rerun()
+
+        st.markdown("---")
+        st.markdown("#### Новое групповое бронирование")
+        sel_date = st.date_input("Дата", value=dt_date.today(), key="org_new_date")
         slots = get_timeslots()
-        group_times = g["times"].split(",") if g["times"] else [g["times"]]
-        start_time = st.selectbox("Время начала", slots, index=slots.index(group_times[0]))
-        end_time = st.selectbox("Время конца", slots, index=slots.index(group_times[-1]))
+        col1, col2 = st.columns(2)
+        with col1:
+            start_time = st.selectbox("Время начала", slots, key="org_new_time_start")
+        with col2:
+            end_time = st.selectbox("Время конца", slots, index=len(slots)-1, key="org_new_time_end")
         available_lanes = [1,2,3,4,5,6]
-        default_lanes = [int(l) for l in g["lanes"].split(",")]
-        sel_lanes = st.multiselect("Дорожки", available_lanes, default=default_lanes)
-        if st.button("Сохранить изменения", key="org_save_edit"):
+        all_lanes = st.checkbox("Все дорожки", key="org_new_all_lanes")
+        if all_lanes:
+            sel_lanes = available_lanes
+        else:
+            sel_lanes = st.multiselect("Дорожки", available_lanes, default=[1], key="org_new_lanes")
+        if st.button("Забронировать", key="org_new_book_btn"):
             start_idx = slots.index(start_time)
             end_idx = slots.index(end_time)
             if start_idx > end_idx:
                 st.error("Время начала не может быть позже конца!")
                 return
             time_range = slots[start_idx:end_idx+1]
-            ok = utils.update_org_booking_group(
-                g["id"], new_date, start_time, sel_lanes
+            ok = utils.add_org_booking_group(
+                st.session_state["username"],
+                sel_date,
+                time_range,
+                sel_lanes
             )
             if ok:
-                st.success("Групповое бронирование изменено")
-                st.session_state["show_org_edit_form"] = False
+                st.success("Групповое бронирование подтверждено.")
                 utils.safe_rerun()
             else:
-                st.error("Ошибка при обновлении")
-        if st.button("Отмена", key="org_cancel_edit"):
-            st.session_state["show_org_edit_form"] = False
-            utils.safe_rerun()
-
-    st.markdown("---")
-    st.markdown("#### Новое групповое бронирование")
-    sel_date = st.date_input("Дата", value=dt_date.today(), key="org_new_date")
-    slots = get_timeslots()
-    col1, col2 = st.columns(2)
-    with col1:
-        start_time = st.selectbox("Время начала", slots, key="org_new_time_start")
-    with col2:
-        end_time = st.selectbox("Время конца", slots, index=len(slots)-1, key="org_new_time_end")
-    available_lanes = [1,2,3,4,5,6]
-    all_lanes = st.checkbox("Все дорожки", key="org_new_all_lanes")
-    if all_lanes:
-        sel_lanes = available_lanes
-    else:
-        sel_lanes = st.multiselect("Дорожки", available_lanes, default=[1], key="org_new_lanes")
-    if st.button("Забронировать", key="org_new_book_btn"):
-        start_idx = slots.index(start_time)
-        end_idx = slots.index(end_time)
-        if start_idx > end_idx:
-            st.error("Время начала не может быть позже конца!")
-            return
-        time_range = slots[start_idx:end_idx+1]
-        ok = utils.add_org_booking_group(
-            st.session_state["username"],
-            sel_date,
-            time_range,
-            sel_lanes
-        )
-        if ok:
-            st.success("Групповое бронирование подтверждено.")
-            utils.safe_rerun()
-        else:
-            st.error("Не удалось создать бронирование (возможно, время/дорожка уже заняты).")
+                st.error("Не удалось создать бронирование (возможно, время/дорожка уже заняты).")
