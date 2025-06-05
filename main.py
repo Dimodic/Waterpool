@@ -50,14 +50,14 @@ else:
             logout_action()
         admin_page()
     else:
-        # ---- Кнопка выхода справа сверху без sidebar
-        top_cols = st.columns([8, 2])
-        with top_cols[1]:
+        # Обычный пользователь или юр. лицо: кнопка справа в первой строке
+        cols = st.columns([6, 1])
+        with cols[1]:
             st.write(
-                f"<div style='text-align:right;font-weight:bold;'>"
+                f"<div style='text-align:right; font-weight:bold;'>"
                 f"👤 {st.session_state['username']} "
                 f"({'Организация' if st.session_state['role']=='org' else 'Пользователь'})"
                 f"</div>", unsafe_allow_html=True)
-            if st.button("Выйти", key="logout_top_btn"):
+            if st.button("Выйти", key="logout_btn_right"):
                 logout_action()
         booking_page()
