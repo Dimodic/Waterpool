@@ -38,15 +38,41 @@ if not st.session_state["logged_in"]:
     else:
         register()
 else:
-    st.sidebar.write(f"👤 **{st.session_state['username']}** ({st.session_state['role']})")
-    if st.sidebar.button("Выход"):
-        user = st.session_state["username"]
-        st.session_state.update(logged_in=False, username="", role="", auth_page="login")
-        logger.info(f"User '{user}' logged out")
-        utils.safe_rerun()
-
-    if st.session_state["role"] != "admin":
-        st.title("Система бронирования дорожек в бассейне")
-        booking_page()
-    else:
+    if st.session_state["role"] == "admin":
+        # Оставляем старую боковую панель и кнопку выхода слева
+        st.sidebar.write(f"👤 **{st.session_state['username']}** ({st.session_state['role']})")
+        if st.sidebar.button("Выход"):
+            user = st.session_state["username"]
+            st.session_state.update(logged_in=False, username="", role="", auth_page="login")
+            logger.info(f"User '{user}' logged out")
+            utils.safe_rerun()
         admin_page()
+    else:
+        # --- Пользовательская панель: без sidebar, кнопка выхода сверху справа
+        st.markdown(
+            """
+            <div style='position:fixed;top:1.5rem;right:2.5rem;z-index:1000;text-align:right;'>
+                <span style="margin-right:1rem;font-weight:bold;">
+                    👤 {username} ({role})
+                </span>
+                <form action="" method="post">
+                    <button type="submit" name="logout-btn" style="
+                        background:#f33;color:white;border:none;padding:0.4rem 1.2rem;
+                        border-radius:7px;cursor:pointer;font-weight:bold;">
+                        Выйти
+                    </button>
+                </form>
+            </div>
+            """.format(username=st.session_state['username'], role="Организация" if st.session_state['role']=="org" else "Пользователь"),
+            unsafe_allow_html=True
+        )
+
+        # Реализация выхода через скрытый html-кликер
+        if 'logout-btn' in st.session_state:
+            user = st.session_state["username"]
+            st.session_state.update(logged_in=False, username="", role="", auth_page="login")
+            logger.info(f"User '{user}' logged out")
+            utils.safe_rerun()
+
+        st.write("")  # маленький отступ для красоты
+        booking_page()
