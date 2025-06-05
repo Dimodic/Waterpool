@@ -50,44 +50,14 @@ else:
             logout_action()
         admin_page()
     else:
-        # --- Кнопка выхода справа вверху (только для user/org) ---
-        st.markdown("""
-        <style>
-        .logout-btn-wrap {
-            position: fixed;
-            top: 1.2rem;
-            right: 2.2rem;
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-        }
-        .logout-btn-profile {
-            font-weight: bold;
-            margin-right: 1.2rem;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        col_logout = st.columns([12, 1])
-        with col_logout[1]:
-            st.empty()  # чтобы не было кнопки в потоке обычного вывода
-
-        # Теперь реальный лайфхак: размещаем через place!
-        from streamlit.runtime.scriptrunner import get_script_run_ctx
-        logout_btn_placeholder = st.empty()
-        with logout_btn_placeholder.container():
-            st.markdown(
-                f"""
-                <div class="logout-btn-wrap">
-                    <span class="logout-btn-profile">
-                        👤 {st.session_state['username']} ({'Организация' if st.session_state['role']=='org' else 'Пользователь'})
-                    </span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            btn = st.button("Выйти", key="logout_top_btn", help="Выйти из профиля", use_container_width=False)
-
-        if btn:
-            logout_action()
-
+        # ---- Кнопка выхода справа сверху без sidebar
+        top_cols = st.columns([8, 2])
+        with top_cols[1]:
+            st.write(
+                f"<div style='text-align:right;font-weight:bold;'>"
+                f"👤 {st.session_state['username']} "
+                f"({'Организация' if st.session_state['role']=='org' else 'Пользователь'})"
+                f"</div>", unsafe_allow_html=True)
+            if st.button("Выйти", key="logout_top_btn"):
+                logout_action()
         booking_page()
