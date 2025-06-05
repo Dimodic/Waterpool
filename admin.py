@@ -52,7 +52,7 @@ def admin_page():
 
 # ------------------ Недельный календарь закрытых слотов --------------------
 def manage_timeslots():
-    st.subheader("Управление слотами (закрытые слоты)")
+    st.subheader("Управление временем (закрытые времена)")
 
     if "week_start_admin" not in st.session_state:
         today = dt_date.today()
@@ -110,7 +110,7 @@ def manage_timeslots():
                     utils.remove_closed_slot(closed_map[(single_date, t)])
                     get_closed_map.clear()
                     get_booking_map.clear()
-                    st.success(f"Слот {t} на {single_date} снова доступен")
+                    st.success(f"Время {t} на {single_date} снова доступно")
                     utils.safe_rerun()
             elif (single_date, t) in booking_map:
                 row_cols[idx+1].write("📌")
@@ -118,44 +118,51 @@ def manage_timeslots():
                 row_cols[idx+1].write("")
 
     st.markdown("---")
-    st.markdown("#### Добавить новый закрытый слот")
+    st.markdown("#### Добавить новое закрытое время")
     add_date = st.date_input(
-        label="Дата слота",
+        label="Дата времени",
         value=dt_date.today(),
         key="add_closed_date_admin"
     )
     add_time = st.selectbox(
-        label="Время слота",
+        label="Время времени",
         options=timeslots,
         key="add_closed_time_admin"
     )
     add_comment = st.text_input("Комментарий (необязательно)", key="add_closed_comment_admin")
 
-    if st.button("Добавить закрытый слот"):
+    if st.button("Добавить закрытое время"):
         ok = utils.add_closed_slot(add_date, add_time, add_comment)
         if ok:
             get_closed_map.clear()
-            st.success(f"Слот {add_time} на {add_date} закрыт")
+            st.success(f"Время {add_time} на {add_date} закрыто")
             utils.safe_rerun()
         else:
-            st.warning("Такой закрытый слот уже существует.")
+            st.warning("Такое закрытое время уже существует.")
 
 # ------------------ Управление тренерами и прочее ----------------------------
 def manage_trainers():
-    st.subheader("Управление тренерами")
-    trainers = utils.list_trainers()
-    st.write("Существующие тренеры:", ", ".join(trainers) if trainers else "—")
+    st.subheader("Управление временем тренеров")
+    trainers = utils.list_trainers(full=True)
+    st.write("Существующие тренеры:", ", ".join([f"{t['name']} ({t['age']})" for t in trainers]) if trainers else "—")
 
-    new_tr = st.text_input("Имя нового тренера", key="new_trainer")
-    if st.button("Добавить тренера"):
-        if utils.add_trainer(new_tr):
-            st.success(f"Добавлен тренер {new_tr}")
-            utils.safe_rerun()
-        else:
-            st.warning("Тренер с таким именем уже есть.")
+    with st.form("add_trainer_form"):
+        new_tr = st.text_input("Имя нового тренера", key="new_trainer")
+        new_age = st.number_input("Возраст", min_value=16, max_value=100, step=1, key="new_trainer_age")
+        new_desc = st.text_area("Краткое описание", key="new_trainer_desc")
+        submitted = st.form_submit_button("Добавить тренера")
+        if submitted:
+            if not new_tr or not new_age or not new_desc:
+                st.warning("Заполните все поля!")
+            else:
+                if utils.add_trainer(new_tr, age=new_age, description=new_desc):
+                    st.success(f"Добавлен тренер {new_tr}")
+                    utils.safe_rerun()
+                else:
+                    st.warning("Тренер с таким именем уже есть.")
 
     if trainers:
-        rem_tr = st.selectbox("Удалить тренера", trainers, key="rem_trainer")
+        rem_tr = st.selectbox("Удалить тренера", [t['name'] for t in trainers], key="rem_trainer")
         if st.button("Удалить тренера"):
             utils.remove_trainer(rem_tr)
             st.success(f"Тренер {rem_tr} удалён")
@@ -165,49 +172,66 @@ def manage_trainer_schedule():
     st.subheader("Управление расписанием тренеров")
     st.session_state.setdefault("show_add_trainer_schedule", False)
     schedules = utils.list_trainer_schedule()
-    day_names = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
+    day_names = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]
+    trainers = utils.list_trainers()
+    timeslots = get_timeslots_admin()
 
-    if schedules:
-        header_cols = st.columns([2,2,2,1])
-        for col, text in zip(header_cols, ["Тренер", "День недели", "Время", "Удалить"]):
-            col.write(text)
+    # --- Фильтр по тренеру ---
+    filter_trainer = st.selectbox("Фильтр по тренеру", ["Все"] + trainers, key="filter_trainer_schedule")
 
-        for row in schedules:
-            cols = st.columns([2,2,2,1])
-            with cols[0]:
-                st.write(row["trainer"])
-            with cols[1]:
-                st.write(day_names[row["day_of_week"]])
-            with cols[2]:
-                st.write(row["time"])
-            with cols[3]:
-                if st.button("🗑️", key=f"del_sched_{row['id']}"):
-                    utils.remove_trainer_schedule(row["id"])
-                    st.success("Запись удалена")
-                    utils.safe_rerun()
-    else:
-        st.info("Нет записей в расписании.")
+    # --- Построение таблицы расписания ---
+    # Словарь: (день, время) -> [тренеры]
+    slot_map = {}
+    for row in schedules:
+        if filter_trainer != "Все" and row["trainer"] != filter_trainer:
+            continue
+        slot_map.setdefault((row["day_of_week"], row["time"]), []).append(row)
 
+    st.markdown("#### Таблица расписания")
+    table_html = """
+    <style>
+    .sch-table {border-collapse:collapse; width:100%;}
+    .sch-table td, .sch-table th {border:1px solid #e0e0e0; padding:8px 6px; font-size:15px; min-width:120px; min-height:40px; text-align:center; vertical-align:top;}
+    .sch-table th {background:#eaeaea; color:#222; font-size:16px;}
+    .sch-trainer {display:block; margin:2px 0; padding:2px 6px; background:none; border-radius:4px; font-size:15px;}
+    .sch-del {color:#FF7F7F; font-weight:bold; cursor:pointer; margin-left:4px; background:none;}
+    </style>
+    <table class='sch-table'><tr><th>Время</th>"""
+    for d in range(7):
+        table_html += f"<th>{day_names[d]}</th>"
+    table_html += "</tr>"
+    for t in timeslots:
+        table_html += f"<tr><td>{t}</td>"
+        for d in range(7):
+            slot = slot_map.get((d, t), [])
+            cell = ""
+            for s in slot:
+                cell += f"<span class='sch-trainer'>{s['trainer']} <span class='sch-del' title='Удалить' data-id='{s['id']}'>🗑️</span></span>"
+            table_html += f"<td>{cell}</td>"
+        table_html += "</tr>"
+    table_html += "</table>"
+    st.markdown(table_html, unsafe_allow_html=True)
+    st.info("Для удаления тренера из времени используйте 🗑️. (Добавление — через форму ниже)")
+
+    # --- Старая форма массового добавления ---
     st.markdown("---")
     if not st.session_state["show_add_trainer_schedule"]:
         if st.button("Добавить расписание"):
             st.session_state["show_add_trainer_schedule"] = True
 
     if st.session_state["show_add_trainer_schedule"]:
-        st.markdown("#### Добавить записи в расписание")
-        trainers = utils.list_trainers()
+        st.markdown("#### Массовое добавление записей в расписание")
         if not trainers:
             st.warning("Сначала добавьте хотя бы одного тренера в разделе «Тренеры».")
         else:
             trainer = st.selectbox("Тренер", trainers, key="new_sch_trainer")
-            day = st.selectbox("День недели", day_names, key="new_sch_day")
-            timeslots = get_timeslots_admin()
+            day = st.selectbox("День недели", ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"], key="new_sch_day")
             col_time1, col_time2 = st.columns(2)
             with col_time1:
                 start_time = st.selectbox("Время начала", timeslots, key="new_sch_time_start")
             with col_time2:
                 end_time = st.selectbox("Время конца", timeslots, index=len(timeslots)-1, key="new_sch_time_end")
-            dow_map = {name: idx for idx, name in enumerate(day_names)}
+            dow_map = {name: idx for idx, name in enumerate(["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"])}
 
             col_btn1, col_btn2 = st.columns([1,1])
             with col_btn1:

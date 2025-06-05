@@ -117,15 +117,21 @@ def remove_timeslot(time_str: str):
         db.commit()
 
 # ------------------ Тренеры и их расписание ---------------------------------
-def list_trainers():
+def list_trainers(full=False):
     with SessionLocal() as db:
+        if full:
+            return [{
+                'name': t.name,
+                'age': t.age,
+                'description': t.description
+            } for t in db.query(Trainer).all()]
         return [t.name for t in db.query(Trainer).all()]
 
-def add_trainer(name: str) -> bool:
+def add_trainer(name: str, age: int, description: str) -> bool:
     with SessionLocal() as db:
         if db.query(Trainer).filter_by(name=name).first():
             return False
-        db.add(Trainer(name=name))
+        db.add(Trainer(name=name, age=age, description=description))
         db.commit()
         return True
 
