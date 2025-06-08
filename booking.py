@@ -9,7 +9,7 @@ def get_timeslots():
     return utils.list_timeslots()
 
 def booking_page():
-    st.subheader("Бронирование дорожек и тренеров")
+    st.subheader("Бронирование дорожек")
 
     if st.session_state.get("role") == "org":
         booking_page_org()
@@ -162,6 +162,18 @@ def booking_page():
                 trainer_options = ["Без тренера"] + free_trainers
                 trainer_index = trainer_options.index(b["trainer"] if b["trainer"] else "Без тренера")
                 new_trainer = st.selectbox("Тренер", trainer_options, index=trainer_index, placeholder="Выберите тренера")
+                if new_trainer and new_trainer != "Без тренера":
+                    if st.button(f"Показать информацию о тренере (редакт)", key="show_trainer_info_edit"):
+                        trainer_info = utils.get_trainer_by_name(new_trainer)
+                        if trainer_info:
+                            st.info(
+                                f"**Фамилия, имя, отчество:** {trainer_info['last_name']} {trainer_info['first_name']} {trainer_info['middle_name']}\n"
+                                f"**Возраст:** {trainer_info['age']}\n"
+                                f"**Описание:** {trainer_info['description']}"
+                            )
+                        else:
+                            st.warning("Информация о тренере не найдена.")
+
             btn_cols = st.columns([1, 1])
             with btn_cols[0]:
                 if st.button("Сохранить изменения", key="save_edit_booking"):
@@ -187,7 +199,8 @@ def booking_page():
         # Форма нового бронирования
         st.markdown("---")
         if not st.session_state.get("is_confirmed", False):
-            st.warning("Ваша регистрация ожидает подтверждения администрацией. Пожалуйста, принесите все необходимые бумаги в бассейн.")
+            st.warning(
+                "Ваша регистрация ожидает подтверждения администрацией. Пожалуйста, принесите все необходимые бумаги в бассейн.")
             return
 
         form_cols = st.columns([2, 2, 2, 2])
@@ -206,8 +219,29 @@ def booking_page():
         with form_cols[3]:
             scheduled = utils.get_scheduled_trainers(sel_date, sel_time)
             free_trainers = [t for t in scheduled if t not in busy_trainers]
-            trainer_options = ["Без тренера"] + free_trainers
-            trainer = st.selectbox("Тренер", trainer_options, key="new_booking_trainer", placeholder="Выберите тренера")
+            trainer_data = utils.list_trainers(full=True)
+
+            # Сопоставление сокращённого ФИО с полным
+            short_to_full = {t['short_fio']: t['name'] for t in trainer_data if t['name'] in free_trainers}
+            short_fios = ["Без тренера"] + list(short_to_full.keys())
+
+            selected_short = st.selectbox("Тренер", short_fios, key="new_booking_trainer_short",
+                                          placeholder="Выберите тренера")
+
+        # Кнопка показать информацию
+        if selected_short != "Без тренера":
+            if st.button("Показать информацию о тренере", key="show_trainer_info_new"):
+                full_name = short_to_full.get(selected_short)
+                trainer_info = utils.get_trainer_by_name(full_name)
+                if trainer_info:
+                    st.info(
+                        f"**Фамилия, имя, отчество:** {trainer_info['last_name']} {trainer_info['first_name']} {trainer_info['middle_name']}\n"
+                        f"**Возраст:** {trainer_info['age']}\n"
+                        f"**Описание:** {trainer_info['description']}"
+                    )
+                else:
+                    st.warning("Информация о тренере не найдена.")
+
         btn_cols = st.columns([1, 1])
         if free_lanes:
             with btn_cols[0]:
@@ -215,7 +249,7 @@ def booking_page():
                     if utils.is_slot_closed(sel_date, sel_time):
                         st.error("Этот слот закрыт для бронирования администратором.")
                         return
-                    trainer_val = None if trainer == "Без тренера" else trainer
+                    trainer_val = None if selected_short == "Без тренера" else short_to_full[selected_short]
                     ok = utils.add_booking(
                         st.session_state["username"],
                         sel_date,
@@ -224,10 +258,11 @@ def booking_page():
                         trainer_val,
                     )
                     if ok:
-                        st.success(f"Бронирование подтверждено: дорожка {lane}, {sel_time}, {trainer}.")
+                        st.success(f"Бронирование подтверждено: дорожка {lane}, {sel_time}, {selected_short}.")
                         utils.safe_rerun()
                     else:
                         st.error("Не удалось забронировать (слот уже занят или вы не подтверждены). Обновите страницу.")
+
 
 def booking_page_org():
     st.subheader("Бронирование для юридических лиц (групповое)")

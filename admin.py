@@ -4,7 +4,6 @@ import pandas as pd
 import utils
 from datetime import datetime, timedelta, date as dt_date
 
-# Кэширование списков слотов и бронирований
 @st.cache_data(ttl=300)
 def get_timeslots_admin():
     return utils.list_timeslots()
@@ -50,7 +49,7 @@ def admin_page():
     elif section == "Бронирования":
         manage_bookings()
 
-# ------------------ Недельный календарь закрытых слотов --------------------
+# ---- WEEK CALENDAR FOR CLOSED SLOTS ----
 def manage_timeslots():
     st.subheader("Управление временем (закрытые времена)")
 
@@ -73,10 +72,20 @@ def manage_timeslots():
             utils.safe_rerun()
     with nav3:
         picked = st.date_input(
-            label="Выберите любую дату недели",
+            label="Дата недели",
             value=st.session_state.week_start_admin,
-            key="pick_date_for_week_admin"
+            key="pick_date_for_week_admin",
+            format="DD.MM.YYYY",
+            # компактнее — ширина поля ограничена
+            help="Кликните и выберите любой день интересующей недели",
+            # чтобы input был компактным — используем css ниже
         )
+        st.markdown("""
+            <style>
+            .stDateInput input {max-width: 120px !important;}
+            .stSelectbox, .stTextInput input {max-width: 140px !important;}
+            </style>
+        """, unsafe_allow_html=True)
         if picked != st.session_state.week_start_admin:
             st.session_state.week_start_admin = picked - timedelta(days=picked.weekday())
             get_closed_map.clear()
@@ -94,7 +103,7 @@ def manage_timeslots():
     closed_map = get_closed_map(week_start_iso)
     booking_map = get_booking_map(week_start_iso)
 
-    # Строим таблицу: первая строка — заголовки
+    # Таблица — заголовки
     header_cols = st.columns([1] + [1]*7)
     header_cols[0].write("Время")
     for idx, label in enumerate(day_labels):
@@ -119,17 +128,22 @@ def manage_timeslots():
 
     st.markdown("---")
     st.markdown("#### Добавить новое закрытое время")
-    add_date = st.date_input(
-        label="Дата времени",
-        value=dt_date.today(),
-        key="add_closed_date_admin"
-    )
-    add_time = st.selectbox(
-        label="Время времени",
-        options=timeslots,
-        key="add_closed_time_admin"
-    )
-    add_comment = st.text_input("Комментарий (необязательно)", key="add_closed_comment_admin")
+    add_cols = st.columns([1, 1, 2])
+    with add_cols[0]:
+        add_date = st.date_input(
+            label="Дата",
+            value=dt_date.today(),
+            key="add_closed_date_admin",
+            format="DD.MM.YYYY"
+        )
+    with add_cols[1]:
+        add_time = st.selectbox(
+            label="Время",
+            options=timeslots,
+            key="add_closed_time_admin"
+        )
+    with add_cols[2]:
+        add_comment = st.text_input("Комментарий (необязательно)", key="add_closed_comment_admin", max_chars=50)
 
     if st.button("Добавить закрытое время"):
         ok = utils.add_closed_slot(add_date, add_time, add_comment)
@@ -142,24 +156,27 @@ def manage_timeslots():
 
 # ------------------ Управление тренерами и прочее ----------------------------
 def manage_trainers():
-    st.subheader("Управление временем тренеров")
+    st.subheader("Управление тренерами")
     trainers = utils.list_trainers(full=True)
-    st.write("Существующие тренеры:", ", ".join([f"{t['name']} ({t['age']})" for t in trainers]) if trainers else "—")
+    st.write("Существующие тренеры:", ", ".join([t['short_fio'] for t in trainers]) if trainers else "—")
 
     with st.form("add_trainer_form"):
-        new_tr = st.text_input("Имя нового тренера", key="new_trainer")
+        new_last = st.text_input("Фамилия", key="new_trainer_last")
+        new_first = st.text_input("Имя", key="new_trainer_first")
+        new_middle = st.text_input("Отчество", key="new_trainer_middle")
         new_age = st.number_input("Возраст", min_value=16, max_value=100, step=1, key="new_trainer_age")
         new_desc = st.text_area("Краткое описание", key="new_trainer_desc")
         submitted = st.form_submit_button("Добавить тренера")
         if submitted:
-            if not new_tr or not new_age or not new_desc:
-                st.warning("Заполните все поля!")
+            if not new_last or not new_first or not new_age or not new_desc:
+                st.warning("Заполните все обязательные поля!")
             else:
-                if utils.add_trainer(new_tr, age=new_age, description=new_desc):
-                    st.success(f"Добавлен тренер {new_tr}")
+                fio = f"{new_last} {new_first} {new_middle}".strip()
+                if utils.add_trainer(fio, new_first, new_last, new_middle, new_age, new_desc):
+                    st.success(f"Добавлен тренер {fio}")
                     utils.safe_rerun()
                 else:
-                    st.warning("Тренер с таким именем уже есть.")
+                    st.warning("Тренер с таким ФИО уже есть.")
 
     if trainers:
         rem_tr = st.selectbox("Удалить тренера", [t['name'] for t in trainers], key="rem_trainer")
@@ -206,7 +223,14 @@ def manage_trainer_schedule():
             slot = slot_map.get((d, t), [])
             cell = ""
             for s in slot:
-                cell += f"<span class='sch-trainer'>{s['trainer']} <span class='sch-del' title='Удалить' data-id='{s['id']}'>🗑️</span></span>"
+                trainer_info = utils.get_trainer_by_name(s['trainer'])
+                if trainer_info:
+                    short_fio = f"{trainer_info['last_name']} {trainer_info['first_name'][0]}."
+                    if trainer_info['middle_name']:
+                        short_fio += f"{trainer_info['middle_name'][0]}."
+                else:
+                    short_fio = s['trainer']
+                cell += f"<span class='sch-trainer'>{short_fio} <span class='sch-del' title='Удалить' data-id='{s['id']}'>🗑️</span></span>"
             table_html += f"<td>{cell}</td>"
         table_html += "</tr>"
     table_html += "</table>"

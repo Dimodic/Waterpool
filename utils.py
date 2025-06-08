@@ -122,16 +122,25 @@ def list_trainers(full=False):
         if full:
             return [{
                 'name': t.name,
+                'short_fio': f"{t.last_name} {t.first_name[0]}.{t.middle_name[0] + '.' if t.middle_name else ''}",
                 'age': t.age,
                 'description': t.description
             } for t in db.query(Trainer).all()]
+        # Для selectbox возвращаем полное ФИО
         return [t.name for t in db.query(Trainer).all()]
 
-def add_trainer(name: str, age: int, description: str) -> bool:
+def add_trainer(name: str, first_name: str, last_name: str, middle_name: str, age: int, description: str) -> bool:
     with SessionLocal() as db:
         if db.query(Trainer).filter_by(name=name).first():
             return False
-        db.add(Trainer(name=name, age=age, description=description))
+        db.add(Trainer(
+            name=name,
+            first_name=first_name,
+            last_name=last_name,
+            middle_name=middle_name,
+            age=age,
+            description=description
+        ))
         db.commit()
         return True
 
@@ -139,6 +148,19 @@ def remove_trainer(name: str):
     with SessionLocal() as db:
         db.query(Trainer).filter_by(name=name).delete()
         db.commit()
+
+def get_trainer_by_name(name: str):
+    with SessionLocal() as db:
+        t = db.query(Trainer).filter_by(name=name).first()
+        if t:
+            return {
+                "first_name": t.first_name,
+                "last_name": t.last_name,
+                "middle_name": t.middle_name or "",
+                "age": t.age,
+                "description": t.description
+            }
+        return None
 
 def list_trainer_schedule():
     """Возвращает список всех записей расписания."""

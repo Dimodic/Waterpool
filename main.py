@@ -36,7 +36,6 @@ def logout_action():
     utils.safe_rerun()
 
 if not st.session_state["logged_in"]:
-    st.title("Система бронирования дорожек в бассейне")
     if st.session_state["auth_page"] == "login":
         login()
     elif st.session_state["auth_page"] == "register_org":

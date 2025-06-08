@@ -7,7 +7,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.exc import DBAPIError, OperationalError
 
-# --- Настройка подключения --------------------------------------------------
 def _connection_url():
     cfg = st.secrets["postgres"]
     return (
@@ -20,12 +19,11 @@ ENGINE = create_engine(
     pool_size=10,
     max_overflow=20,
     future=True,
-    echo=True,  # логирование SQL-запросов
+    echo=True,
 )
 SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 
-# --- ORM-модели --------------------------------------------------------------
 class User(Base):
     __tablename__ = "users"
 
@@ -39,7 +37,7 @@ class User(Base):
     phone        = Column(String(20), nullable=True)
     gender       = Column(String(10), nullable=True)
     email        = Column(String(100), unique=True, nullable=False, index=True)
-    is_confirmed = Column(Integer, default=0)  # 0 - не подтвержден, 1 - подтвержден
+    is_confirmed = Column(Integer, default=0)
 
     bookings     = relationship("Booking", back_populates="user", cascade="all,delete")
 
@@ -52,9 +50,14 @@ class Timeslot(Base):
 class Trainer(Base):
     __tablename__ = "trainers"
 
-    id        = Column(Integer, primary_key=True, index=True)
-    name      = Column(String(50), unique=True, nullable=False)
-    schedules = relationship("TrainerSchedule", back_populates="trainer", cascade="all,delete")
+    id          = Column(Integer, primary_key=True, index=True)
+    first_name  = Column(String(50), nullable=False)
+    last_name   = Column(String(50), nullable=False)
+    middle_name = Column(String(50), nullable=True)
+    name        = Column(String(150), unique=True, nullable=False)  # legacy для selectbox (оставим, это ФИО)
+    age         = Column(Integer, nullable=True)
+    description = Column(String(200), nullable=True)
+    schedules   = relationship("TrainerSchedule", back_populates="trainer", cascade="all,delete")
 
 class TrainerSchedule(Base):
     __tablename__ = "trainer_schedules"
@@ -75,10 +78,10 @@ class OrgBookingGroup(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     date = Column(Date, nullable=False)
-    time = Column(Time, nullable=False)  # legacy, для обратной совместимости
-    lanes = Column(String(50), nullable=False)  # Список дорожек через запятую
+    time = Column(Time, nullable=False)
+    lanes = Column(String(50), nullable=False)
     created_at = Column(String(30), nullable=True)
-    times = Column(String(200), nullable=True)  # Список времён через запятую
+    times = Column(String(200), nullable=True)
 
 class Booking(Base):
     __tablename__ = "bookings"
@@ -92,7 +95,7 @@ class Booking(Base):
     date      = Column(Date,  nullable=False)
     time      = Column(Time,  nullable=False)
     lane      = Column(Integer, nullable=False)
-    trainer   = Column(String(50), nullable=False)
+    trainer   = Column(String(150), nullable=False)
     group_id  = Column(Integer, ForeignKey("org_booking_groups.id", ondelete="CASCADE"), nullable=True)
 
     user      = relationship("User", back_populates="bookings")
@@ -105,9 +108,7 @@ class ClosedSlot(Base):
     comment = Column(String(200), nullable=True)
     __table_args__ = (UniqueConstraint("date", "time", name="uq_closed_slot"),)
 
-# --- Инициализация и миграция ------------------------------------------------
 def init_db():
-    # 1) Проверка подключения
     try:
         with ENGINE.connect():
             pass
@@ -115,7 +116,6 @@ def init_db():
         st.error(f"Не удалось подключиться к базе данных:\n{e}")
         st.stop()
 
-    # 2) Создание таблиц
     try:
         Base.metadata.create_all(bind=ENGINE)
     except DBAPIError as e:
@@ -123,7 +123,6 @@ def init_db():
         st.error(f"Ошибка при создании таблиц:\n{orig}")
         st.stop()
 
-    # 3) Миграция: добавляем недостающие поля в users
     inspector = inspect(ENGINE)
     existing_cols = [col["name"] for col in inspector.get_columns("users")]
     existing_booking_cols = [col["name"] for col in inspector.get_columns("bookings")]
@@ -143,10 +142,8 @@ def init_db():
         for col, definition in migrations.items():
             if col not in existing_cols:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {definition}"))
-        # Добавляем group_id в bookings
         if "group_id" not in existing_booking_cols:
             conn.execute(text("ALTER TABLE bookings ADD COLUMN group_id INTEGER REFERENCES org_booking_groups(id) ON DELETE CASCADE"))
-        # Создаём таблицу org_booking_groups если нет
         if "org_booking_groups" not in existing_tables:
             conn.execute(text("""
                 CREATE TABLE org_booking_groups (
@@ -159,12 +156,25 @@ def init_db():
                     times VARCHAR(200)
                 )
             """))
-        # Добавляем times в org_booking_groups
         existing_org_group_cols = [col["name"] for col in inspector.get_columns("org_booking_groups")] if "org_booking_groups" in existing_tables else []
         if "org_booking_groups" in existing_tables and "times" not in existing_org_group_cols:
             conn.execute(text("ALTER TABLE org_booking_groups ADD COLUMN times VARCHAR(200)"))
 
-    # 4) Дефолтные данные
+        # --- Миграция для тренеров ---
+        existing_trainer_cols = [col["name"] for col in inspector.get_columns("trainers")]
+        if "first_name" not in existing_trainer_cols:
+            conn.execute(text("ALTER TABLE trainers ADD COLUMN first_name VARCHAR(50) NOT NULL DEFAULT ''"))
+        if "last_name" not in existing_trainer_cols:
+            conn.execute(text("ALTER TABLE trainers ADD COLUMN last_name VARCHAR(50) NOT NULL DEFAULT ''"))
+        if "middle_name" not in existing_trainer_cols:
+            conn.execute(text("ALTER TABLE trainers ADD COLUMN middle_name VARCHAR(50)"))
+        if "age" not in existing_trainer_cols:
+            conn.execute(text("ALTER TABLE trainers ADD COLUMN age INTEGER"))
+        if "description" not in existing_trainer_cols:
+            conn.execute(text("ALTER TABLE trainers ADD COLUMN description VARCHAR(200)"))
+        if "name" not in existing_trainer_cols:
+            conn.execute(text("ALTER TABLE trainers ADD COLUMN name VARCHAR(150) NOT NULL DEFAULT ''"))
+
     from passlib.hash import bcrypt
     from datetime import time
 
