@@ -3,8 +3,8 @@ import streamlit as st
 st.set_page_config(layout='wide')
 
 import logging
-from db import init_db
-import utils
+from app.db import init_db
+from app import utils
 from auth import login, register, register_org
 from booking import booking_page
 from admin import admin_page
@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.FileHandler("app.log", encoding="utf-8"),
+        logging.FileHandler("../app.log", encoding="utf-8"),
         logging.StreamHandler(),
     ]
 )

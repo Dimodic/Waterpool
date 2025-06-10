@@ -9,6 +9,21 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 
 #  engine
 
+def get_engine(connection_url=None):
+    if not connection_url:
+        cfg = st.secrets["postgres"]
+        connection_url = (
+            f"postgresql+psycopg2://{cfg['user']}:{cfg['password']}"
+            f"@{cfg['host']}:{cfg['port']}/{cfg['dbname']}"
+        )
+    return create_engine(
+        connection_url,
+        pool_size=10,
+        max_overflow=20,
+        echo=False,
+        future=True,
+    )
+
 def _connection_url() -> str:
     cfg = st.secrets["postgres"]
     return (

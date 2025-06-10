@@ -1,7 +1,7 @@
 # admin.py
 import streamlit as st
 import pandas as pd
-import utils
+from app import utils
 from datetime import datetime, timedelta, date as dt_date
 
 @st.cache_data(ttl=300)

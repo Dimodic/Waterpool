@@ -1,7 +1,7 @@
 # booking.py
 import streamlit as st
-import utils
-from datetime import datetime, timedelta, date as dt_date
+from app import utils
+from datetime import timedelta, date as dt_date
 import pandas as pd
 
 @st.cache_data(ttl=300)

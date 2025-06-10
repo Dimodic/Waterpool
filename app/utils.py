@@ -3,7 +3,7 @@ import streamlit as st
 from datetime import datetime, time as dt_time
 from passlib.hash import bcrypt
 
-from db import (
+from app.db import (
     SessionLocal, User, Lane, Timeslot, Trainer, TrainerSchedule,
     Booking, OrgBookingGroup, ClosedSlot
 )
@@ -25,7 +25,6 @@ def _get_lane(db, lane_number: int) -> Lane:
         db.add(lane)
         db.flush()
     return lane
-
 
 def _get_timeslot(db, time_str: str) -> Timeslot:
     t = datetime.strptime(time_str, "%H:%M").time()
@@ -231,35 +230,34 @@ def _booking_exists(db, date, timeslot_id, lane_id=None, trainer_id=None) -> boo
     return q.first() is not None
 
 
-def add_booking(username, date, time_str, lane_number, trainer_name=None, group_id=None):
+def add_booking(username, date, time_str, lane_number, trainer_name=None):
     with SessionLocal() as db:
         user = db.query(User).filter_by(username=username).first()
-        if not user or (user.role != "org" and not user.is_confirmed):
-            return False
+        ts = _get_timeslot(db, time_str)
+        lane = _get_lane(db, lane_number)
+        trainer = db.query(Trainer).filter_by(name=trainer_name).first() if trainer_name else None
 
-        lane      = _get_lane(db, lane_number)
-        timeslot  = _get_timeslot(db, time_str)
-        trainer   = db.query(Trainer).filter_by(name=trainer_name).first() if trainer_name else None
-
-        if _booking_exists(db, date, timeslot.id, lane_id=lane.id):
-            return False
-        if trainer and _booking_exists(db, date, timeslot.id, trainer_id=trainer.id):
-            return False
-
-        db.add(Booking(
+        # Проверка: есть ли уже такое бронирование?
+        exists = db.query(Booking).filter_by(
             user_id=user.id,
             date=date,
-            timeslot_id=timeslot.id,
+            timeslot_id=ts.id,
             lane_id=lane.id,
-            trainer_id=trainer.id if trainer else None,
-            group_id=group_id
-        ))
-        try:
-            db.commit()
-            return True
-        except Exception:
-            db.rollback()
-            return False
+            trainer_id=trainer.id if trainer else None
+        ).first()
+        if exists:
+            return False  # Бронь уже есть!
+
+        booking = Booking(
+            user_id=user.id,
+            date=date,
+            timeslot_id=ts.id,
+            lane_id=lane.id,
+            trainer_id=trainer.id if trainer else None
+        )
+        db.add(booking)
+        db.commit()
+        return True
 
 
 def list_user_bookings(username):
@@ -328,9 +326,10 @@ def add_org_booking_group(username, date, times, lanes):
         group = OrgBookingGroup(
             user_id=user.id,
             date=date,
-            timeslot_id=base_ts.id,
             lanes=",".join(str(l) for l in lanes),
-            times=",".join(times)
+            times=",".join(times),
+            time=base_ts.time,
+            created_at=datetime.now().isoformat()
         )
         db.add(group)
         db.flush()  # получаем group.id
@@ -388,12 +387,19 @@ def list_closed_slots(date):
         } for s in slots]
 
 
-def add_closed_slot(date, time_str, comment=None) -> bool:
+def add_closed_slot(date, time_str, comment=None, lane_number=1) -> bool:
     with SessionLocal() as db:
         ts = _get_timeslot(db, time_str)
-        if db.query(ClosedSlot).filter_by(date=date, timeslot_id=ts.id).first():
+        lane = _get_lane(db, lane_number)  # lane_number по умолчанию 1
+        if db.query(ClosedSlot).filter_by(date=date, timeslot_id=ts.id, lane_id=lane.id).first():
             return False
-        db.add(ClosedSlot(date=date, timeslot_id=ts.id, comment=comment))
+        db.add(ClosedSlot(
+            date=date,
+            time=ts.time,  # <-- вот это обязательно!
+            comment=comment or "",
+            lane_id=lane.id,
+            timeslot_id=ts.id
+        ))
         db.commit()
         return True
 
@@ -408,3 +414,32 @@ def is_slot_closed(date, time_str) -> bool:
     with SessionLocal() as db:
         ts = _get_timeslot(db, time_str)
         return db.query(ClosedSlot).filter_by(date=date, timeslot_id=ts.id).first() is not None
+
+def add_slot(trainer_name: str, date: str, time_start: str, time_end: str) -> bool:
+    """
+    Добавляет слот для тренера на определенную дату и время.
+    (Примитивная реализация — как Timeslot и TrainerSchedule, если нужно что-то иное, уточни).
+    """
+    from datetime import datetime as dt, time as dt_time
+    with SessionLocal() as db:
+        trainer = db.query(Trainer).filter_by(name=trainer_name).first()
+        if not trainer:
+            return False
+        # Добавим timeslot (start)
+        t_start = dt.strptime(time_start, "%H:%M").time()
+        ts = db.query(Timeslot).filter_by(time=t_start).first()
+        if not ts:
+            ts = Timeslot(time=t_start)
+            db.add(ts)
+            db.flush()
+        # Добавим schedule
+        dow = dt.strptime(date, "%Y-%m-%d").weekday()
+        if db.query(TrainerSchedule).filter_by(trainer_id=trainer.id, timeslot_id=ts.id, day_of_week=dow).first():
+            return False
+        db.add(TrainerSchedule(
+            trainer_id=trainer.id,
+            timeslot_id=ts.id,
+            day_of_week=dow
+        ))
+        db.commit()
+        return True

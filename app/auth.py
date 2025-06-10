@@ -1,5 +1,5 @@
 import streamlit as st
-import utils
+from app import utils
 import re
 
 def is_valid_phone(phone):
