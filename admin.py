@@ -49,7 +49,7 @@ def admin_page():
     elif section == "Бронирования":
         manage_bookings()
 
-# ---- WEEK CALENDAR FOR CLOSED SLOTS ----
+#  Недельный календарь для закрытых слотов
 def manage_timeslots():
     st.subheader("Управление временем (закрытые времена)")
 
@@ -154,7 +154,7 @@ def manage_timeslots():
         else:
             st.warning("Такое закрытое время уже существует.")
 
-# ------------------ Управление тренерами и прочее ----------------------------
+#  Управление тренерами и прочее
 def manage_trainers():
     st.subheader("Управление тренерами")
     trainers = utils.list_trainers(full=True)

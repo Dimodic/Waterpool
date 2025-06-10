@@ -1,5 +1,4 @@
 # utils.py — адаптирован под новую схему
-# -----------------------------------------------------------------------------
 import streamlit as st
 from datetime import datetime, time as dt_time
 from passlib.hash import bcrypt
@@ -9,7 +8,7 @@ from db import (
     Booking, OrgBookingGroup, ClosedSlot
 )
 
-# --------------------------------------------------------------------- helpers
+#  helpers
 def safe_rerun() -> None:
     """Аккуратная перезагрузка страницы в Streamlit."""
     if hasattr(st, "rerun"):
@@ -18,7 +17,7 @@ def safe_rerun() -> None:
         st.experimental_rerun()
 
 
-# -------- внутренняя «лента» и «слот» ----------------------------------------
+#  внутренняя «лента» и «слот»
 def _get_lane(db, lane_number: int) -> Lane:
     lane = db.query(Lane).filter_by(number=lane_number).first()
     if not lane:
@@ -38,7 +37,7 @@ def _get_timeslot(db, time_str: str) -> Timeslot:
     return ts
 
 
-# --------------------------------------------------------------------- users
+#  users
 def add_user(
     username: str, password: str,
     first_name: str, last_name: str, middle_name: str,
@@ -107,7 +106,7 @@ def remove_user(user_id: int):
         db.commit()
 
 
-# --------------------------------------------------------------------- lanes & timeslots
+#  lanes & timeslots
 def list_lanes():
     with SessionLocal() as db:
         return sorted([l.number for l in db.query(Lane).all()])
@@ -134,7 +133,7 @@ def remove_timeslot(time_str: str):
         db.commit()
 
 
-# --------------------------------------------------------------------- trainers (интерфейс прежний)
+#  trainers (интерфейс прежний)
 def list_trainers(full: bool = False):
     with SessionLocal() as db:
         query = db.query(Trainer).all()
@@ -142,7 +141,7 @@ def list_trainers(full: bool = False):
             return [{
                 "name": t.name,
                 "short_fio": f"{t.last_name} {t.first_name[0]}.{t.middle_name[0] + '.' if t.middle_name else ''}",
-                "age": t.age,
+                "age": t.agebigint,
                 "description": t.description,
             } for t in query]
         return [t.name for t in query]
@@ -158,7 +157,7 @@ def add_trainer(name: str, first: str, last: str, middle: str,
             first_name=first,
             last_name=last,
             middle_name=middle,
-            age=age,
+            agebigint=age,
             description=desc
         ))
         db.commit()
@@ -179,13 +178,13 @@ def get_trainer_by_name(name: str):
                 "first_name": t.first_name,
                 "last_name":  t.last_name,
                 "middle_name": t.middle_name or "",
-                "age": t.age,
+                "age": t.agebigint,
                 "description": t.description,
             }
         return None
 
 
-# --------------------------------------------------------------------- trainer schedule
+#  trainer schedule
 def list_trainer_schedule():
     with SessionLocal() as db:
         sch = db.query(TrainerSchedule).all()
@@ -222,7 +221,7 @@ def remove_trainer_schedule(schedule_id: int):
         db.commit()
 
 
-# --------------------------------------------------------------------- bookings
+#  bookings
 def _booking_exists(db, date, timeslot_id, lane_id=None, trainer_id=None) -> bool:
     q = db.query(Booking).filter_by(date=date, timeslot_id=timeslot_id)
     if lane_id is not None:
@@ -316,7 +315,7 @@ def get_scheduled_trainers(date, time_str):
         return [s.trainer.name for s in sch]
 
 
-# --------------------------- групповые бронирования ---------------------------
+#  групповые бронирования
 def add_org_booking_group(username, date, times, lanes):
     with SessionLocal() as db:
         user = db.query(User).filter_by(username=username).first()
@@ -377,7 +376,7 @@ def remove_org_booking_group(group_id: int):
         db.commit()
 
 
-# --------------------------------------------------------------------- closed slots
+#  closed slots
 def list_closed_slots(date):
     with SessionLocal() as db:
         slots = db.query(ClosedSlot).filter_by(date=date).order_by(ClosedSlot.timeslot_id).all()

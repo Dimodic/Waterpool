@@ -16,9 +16,9 @@ def booking_page():
         return
 
     cols = st.columns([2, 2])  # одинаковая ширина для левой и правой части
-    # ----------- Левая колонка: недельная таблица -----------
+    #  Левая колонка: недельная таблица
     with cols[0]:
-        # --- Недельная таблица и навигация ---
+        #  Недельная таблица и навигация
         if "week_start_user" not in st.session_state:
             today = dt_date.today()
             st.session_state.week_start_user = today - timedelta(days=today.weekday())
@@ -113,7 +113,7 @@ def booking_page():
         html += "</table>"
         st.markdown(html, unsafe_allow_html=True)
 
-    # ----------- Правая колонка: список броней и форма -----------
+    #  Правая колонка: список броней и форма
     with cols[1]:
         st.markdown("### Мои бронирования")
         my_bookings = utils.list_user_bookings(st.session_state["username"])
@@ -268,7 +268,7 @@ def booking_page_org():
     st.subheader("Бронирование для юридических лиц (групповое)")
 
     cols = st.columns([2, 2])  # одинаковая ширина для левой и правой части
-    # ----------- Левая колонка: недельная таблица -----------
+    #  Левая колонка: недельная таблица
     with cols[0]:
         if "week_start_org" not in st.session_state:
             today = dt_date.today()
@@ -367,7 +367,7 @@ def booking_page_org():
         html += "</table>"
         st.markdown(html, unsafe_allow_html=True)
 
-    # ----------- Правая колонка: список групповых броней и форма -----------
+    #  Правая колонка: список групповых броней и форма
     with cols[1]:
         st.markdown("### Мои групповые бронирования")
         groups = utils.list_org_booking_groups(st.session_state["username"])

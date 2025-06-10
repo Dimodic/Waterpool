@@ -1,5 +1,4 @@
 # db.py — ORM схема, синхронизированная с SQL-файлом
-# -----------------------------------------------------------------------------
 import streamlit as st
 from sqlalchemy import (
     create_engine, Column, Integer, String, Date, Time, BigInteger,
@@ -8,7 +7,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.exc import DBAPIError, OperationalError
 
-# --------------------------------------------------------------------- engine
+#  engine
 
 def _connection_url() -> str:
     cfg = st.secrets["postgres"]
@@ -27,7 +26,7 @@ ENGINE = create_engine(
 SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 
-# --------------------------------------------------------------------- models
+#  models
 
 class User(Base):
     __tablename__ = "users"
@@ -113,14 +112,16 @@ class Booking(Base):
     id        = Column(Integer, primary_key=True, index=True)
     user_id   = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     date      = Column(Date, nullable=False)
-    time      = Column(Time, nullable=False)
+    timeslot_id = Column(Integer, ForeignKey("timeslots.id", ondelete="CASCADE"), nullable=False)
     lane_id   = Column("lane", BigInteger, ForeignKey("lanes.id", ondelete="CASCADE"), nullable=False)
-    trainer   = Column(String(150), nullable=False)
-    group_id  = Column(Integer, ForeignKey("org_booking_groups.id", ondelete="CASCADE"), nullable=False)
+    trainer_id = Column(Integer, ForeignKey("trainers.id", ondelete="CASCADE"), nullable=True)
+    group_id  = Column(Integer, ForeignKey("org_booking_groups.id", ondelete="CASCADE"), nullable=True)
 
     user      = relationship("User", back_populates="bookings")
     lane      = relationship("Lane")
     group     = relationship("OrgBookingGroup")
+    timeslot  = relationship("Timeslot")
+    trainer   = relationship("Trainer")
 
 
 class ClosedSlot(Base):
@@ -142,7 +143,7 @@ class Table9(Base):
 
     id = Column(BigInteger, primary_key=True, index=True)
 
-# --------------------------------------------------------------------- init
+#  init
 
 def init_db():
     """Создаём таблицы и сеем базовые справочники (6 дорожек, слоты 09:00–18:00)."""
@@ -163,18 +164,18 @@ def init_db():
     from passlib.hash import bcrypt
 
     with SessionLocal() as db:
-        # --- lanes ----------------------------------------------------------
+        #  lanes
         if not db.query(Lane).count():
             for n in range(1, 7):
                 db.add(Lane(number=n, name=f"Дорожка {n}"))
 
-        # --- timeslots ------------------------------------------------------
+        #  timeslots
         default_hours = [time(h, 0) for h in range(9, 18)]
         for t in default_hours:
             if not db.query(Timeslot).filter_by(time=t).first():
                 db.add(Timeslot(time=t))
 
-        # --- admin user -----------------------------------------------------
+        #  admin user
         if not db.query(User).filter_by(username="admin").first():
             db.add(User(
                 username="admin",

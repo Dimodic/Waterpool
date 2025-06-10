@@ -2,7 +2,6 @@ import streamlit as st
 import utils
 import re
 
-
 def is_valid_phone(phone):
     # Убираем пробелы и дефисы для удобства
     clean = phone.replace(" ", "").replace("-", "")
