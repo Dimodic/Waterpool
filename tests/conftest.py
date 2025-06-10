@@ -6,6 +6,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.db import Base
+from app import utils
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -23,3 +24,8 @@ def session(sqlite_engine):
     session = Session()
     yield session
     session.close()
+
+
+@pytest.fixture(autouse=True)
+def patch_session(monkeypatch, session):
+    monkeypatch.setattr(utils, "SessionLocal", lambda: session)

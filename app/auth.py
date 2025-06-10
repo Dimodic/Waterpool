@@ -3,14 +3,11 @@ from app import utils
 import re
 
 def is_valid_phone(phone):
-    # Убираем пробелы и дефисы для удобства
-    clean = phone.replace(" ", "").replace("-", "")
-    return bool(re.fullmatch(r"\+7\d{10}", clean))
+    return bool(re.fullmatch(r"\+7\d{10}", re.sub(r"[ -]", "", phone)))
 
 
 def is_valid_email(email):
-    # Простая, но рабочая проверка email
-    return bool(re.fullmatch(r"[^@ \t\r\n]+@[^@ \t\r\n]+\.[^@ \t\r\n]+", email))
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email))
 
 
 def login():
