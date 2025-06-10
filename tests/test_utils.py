@@ -1,15 +1,13 @@
 from app import utils
 
-def test_add_user(monkeypatch, session):
-    # Подменяем SessionLocal на тестовую сессию
-    monkeypatch.setattr(utils, "SessionLocal", lambda: session)
+
+def test_add_user():
     ok = utils.add_user(
         "testuser", "testpass", "Иван", "Иванов", "", "+79990001122", "male", "test@t.ru"
     )
     assert ok
 
-def test_validate_user(monkeypatch, session):
-    monkeypatch.setattr(utils, "SessionLocal", lambda: session)
+def test_validate_user():
     # Сначала добавим пользователя
     utils.add_user(
         "testuser2", "pw", "Петр", "Петров", "", "+79991112233", "male", "test2@t.ru"
@@ -19,8 +17,7 @@ def test_validate_user(monkeypatch, session):
     role_bad = utils.validate_user("testuser2", "badpass")
     assert role_bad is None
 
-def test_remove_user(monkeypatch, session):
-    monkeypatch.setattr(utils, "SessionLocal", lambda: session)
+def test_remove_user():
     utils.add_user(
         "toremove", "pw", "Имя", "Фам", "", "+79998887766", "male", "remove@t.ru"
     )
@@ -29,8 +26,7 @@ def test_remove_user(monkeypatch, session):
     users = utils.list_users()
     assert all(u["username"] != "toremove" for u in users)
 
-def test_add_duplicate_user(monkeypatch, session):
-    monkeypatch.setattr(utils, "SessionLocal", lambda: session)
+def test_add_duplicate_user():
     ok = utils.add_user(
         "dupl", "pass", "Имя", "Фам", "", "+79997778899", "male", "dupl@t.ru"
     )

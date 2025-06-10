@@ -1,16 +1,16 @@
 from app import utils
 from datetime import time as dt_time, date, time
 
-def setup_user_trainer_schedule(monkeypatch, session):
-    monkeypatch.setattr(utils, "SessionLocal", lambda: session)
+
+def setup_user_trainer_schedule():
     utils.add_user("vasya", "pass", "Vasya", "Pupkin", "", "+79991112233", "male", "vasya@wp.ru", is_confirmed=1)
     utils.add_trainer("Тренер Иван Иванович", "Иван", "Иванов", "Иванович", 30, "Супер тренер")
     utils.add_timeslot(time(10, 0))
     utils.add_trainer_schedule("Тренер Иван Иванович", 0, "10:00")  # Понедельник
     return "vasya", "Тренер Иван Иванович", "10:00"
 
-def test_user_booking_and_cancel(monkeypatch, session):
-    username, trainer, time_str = setup_user_trainer_schedule(monkeypatch, session)
+def test_user_booking_and_cancel():
+    username, trainer, time_str = setup_user_trainer_schedule()
     today = date.today()
     ok = utils.add_booking(username, today, time_str, 1, trainer)
     assert ok
@@ -21,8 +21,8 @@ def test_user_booking_and_cancel(monkeypatch, session):
     bookings = utils.list_user_bookings(username)
     assert all(b["trainer"] != trainer for b in bookings)
 
-def test_double_booking(monkeypatch, session):
-    username, trainer, time_str = setup_user_trainer_schedule(monkeypatch, session)
+def test_double_booking():
+    username, trainer, time_str = setup_user_trainer_schedule()
     today = date.today()
     ok1 = utils.add_booking(username, today, time_str, 1, trainer)
     assert ok1
@@ -30,8 +30,7 @@ def test_double_booking(monkeypatch, session):
     assert not ok2
 
 
-def test_lane_trainer_status(monkeypatch, session):
-    monkeypatch.setattr(utils, "SessionLocal", lambda: session)
+def test_lane_trainer_status():
     utils.add_user("vasya", "pass", "Vasya", "Pupkin", "", "+79991112233", "male", "vasya@wp.ru", is_confirmed=1)
     utils.add_trainer("Тренер Иван Иванович", "Иван", "Иванов", "Иванович", 30, "Супер тренер")
     utils.add_timeslot(dt_time(10, 0))
@@ -46,8 +45,7 @@ def test_lane_trainer_status(monkeypatch, session):
     assert "Тренер Иван Иванович" in trainers
 
 
-def test_group_org_booking(monkeypatch, session):
-    monkeypatch.setattr(utils, "SessionLocal", lambda: session)
+def test_group_org_booking():
     utils.add_user(
         "orguser", "pw", "Org", "User", None, "+79991111111", "other", "org@t.ru",
         role="org", org_name="Org Organization", is_confirmed=1
